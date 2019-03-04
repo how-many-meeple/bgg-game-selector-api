@@ -1,1 +1,1 @@
-"# bgg-game-selector-api" 
+# bgg-game-selector-api
