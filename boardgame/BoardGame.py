@@ -38,7 +38,7 @@ class BoardGameSelector(object):
         games = []
         for player in self.players:
             games = games + self.__get_player_games(player)
-        games.sort(key=lambda basegame: basegame.name)
+        games.sort(key=lambda base_game: base_game.name)
         return games
 
     def __get_player_games(self, player) -> List[CollectionBoardGame]:
