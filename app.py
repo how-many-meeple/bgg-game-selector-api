@@ -7,7 +7,8 @@ from boardgame.BoardGame import BoardGameFactory
 from boardgame.Filter import Filter
 from boardgame.FilterProcessor import FilterProcessor
 
-app = Flask(__name__)
+application = Flask(__name__)
+app = application  # aliased application for convenience
 CORS(app)
 
 
