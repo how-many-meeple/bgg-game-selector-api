@@ -3,7 +3,7 @@ from unittest.mock import Mock
 
 from boardgamegeek import BGGClient
 
-from boardgame.BoardGame import BoardGameSearch
+from boardgame.board_game import BoardGameSearch
 
 
 class TestBoardGameSearch(TestCase):

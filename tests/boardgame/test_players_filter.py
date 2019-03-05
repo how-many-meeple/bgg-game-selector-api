@@ -3,7 +3,7 @@ from unittest.mock import Mock
 
 from boardgamegeek.objects.games import BaseGame
 
-from boardgame.Filter import PlayersFilter
+from boardgame.filter import PlayersFilter
 
 
 class TestPlayersFilter(TestCase):
