@@ -1,9 +1,15 @@
 from typing import List
 
-from boardgamegeek import BGGClient, CacheBackendSqlite
+from boardgamegeek import BGGClient, CacheBackendSqlite, BGGItemNotFoundError
 from boardgamegeek.objects.games import CollectionBoardGame, BaseGame
 
 from boardgame import FilterProcessor
+
+
+class BoardGameUserNotFoundError(Exception):
+    def __init__(self, error, message):
+        self.error = error
+        self.message = message
 
 
 class BoardGameFactory(object):
@@ -13,8 +19,9 @@ class BoardGameFactory(object):
         return BGGClient(cache=CacheBackendSqlite(path="cache.db", ttl=3600))
 
     @staticmethod
-    def create_selector(player: str) -> 'BoardGameSelector':
-        return BoardGameSelector(BoardGameFactory.create_client(), player)
+    def create_selector(players: str) -> 'BoardGameSelector':
+        player_list = [player.strip() for player in players.split(',')]
+        return BoardGameSelector(BoardGameFactory.create_client(), player_list)
 
     @staticmethod
     def create_search() -> 'BoardGameSearch':
@@ -23,12 +30,22 @@ class BoardGameFactory(object):
 
 class BoardGameSelector(object):
 
-    def __init__(self, bgg: BGGClient, player: str):
+    def __init__(self, bgg: BGGClient, players: List[str]):
         self._bgg = bgg
-        self.player = player
+        self.players = players
 
     def get_games(self) -> List[CollectionBoardGame]:
-        return self._bgg.collection(self.player, own=True).items
+        games = []
+        for player in self.players:
+            games = games + self.__get_player_games(player)
+        games.sort(key=lambda basegame: basegame.name)
+        return games
+
+    def __get_player_games(self, player) -> List[CollectionBoardGame]:
+        try:
+            return self._bgg.collection(player, own=True).items
+        except BGGItemNotFoundError as error:
+            raise BoardGameUserNotFoundError(error, f"No user found called '{player}'")
 
     def get_games_matching_filter(self, game_filter: FilterProcessor):
         return [item for item in self.get_games() if not game_filter.filter_game(item)]
