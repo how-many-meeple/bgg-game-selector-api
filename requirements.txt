@@ -1,4 +1,4 @@
 werkzeug
-boardgamegeek2
+boardgamegeek2==1.0.1
 flask
 flask-cors
