@@ -6,9 +6,9 @@ from werkzeug.datastructures import EnvironHeaders
 
 
 class Filter(metaclass=abc.ABCMeta):
-    _players_count = "BGG_FILTER_PLAYER_COUNT"
-    _min_duration = "BGG_FILTER_MIN_DURATION"
-    _max_duration = "BGG_FILTER_MAX_DURATION"
+    _players_count = "Bgg-Filter-Player-Count"
+    _min_duration = "Bgg-Filter-Min-Duration"
+    _max_duration = "Bgg-Filter-Max-Duration"
 
     def __init__(self, successor=None):
         self._successor = successor
