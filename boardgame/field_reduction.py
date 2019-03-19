@@ -16,7 +16,7 @@ class FieldReduction(object):
     def remove_unwanted(self, data: dict) -> dict:
         if not self.fields:
             return data
-        return {key: data[key] for key in self.fields}
+        return {key: data[key] for key in self.fields if data.get(key)}
 
     @staticmethod
     def create_field_reduction(headers: EnvironHeaders) -> 'FieldReduction':
