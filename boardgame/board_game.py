@@ -3,8 +3,10 @@ from typing import List
 
 from boardgamegeek import BGGClient, CacheBackendSqlite, BGGItemNotFoundError
 from boardgamegeek.objects.games import BaseGame
+from werkzeug.datastructures import EnvironHeaders
 
 from boardgame import filter_processor
+from boardgame.field_reduction import FieldReduction
 from boardgame.legacy_api import BGGClientLegacy
 
 
@@ -33,15 +35,18 @@ class BoardGameFactory(object):
                                retries=6)
 
     @staticmethod
-    def create_player_selector(players: str) -> 'BoardGamePlayerSelector':
+    def create_player_selector(players: str, headers: EnvironHeaders) -> 'BoardGamePlayerSelector':
+        field_reduction = FieldReduction.create_field_reduction(headers)
         player_list = [player.strip() for player in players.split(',')]
-        return BoardGamePlayerSelector(BoardGameFactory.create_client(), player_list)
+        return BoardGamePlayerSelector(BoardGameFactory.create_client(), field_reduction, player_list)
 
     @staticmethod
-    def create_list_selector(list_ids: str) -> 'BoardGameGeekListSelector':
+    def create_list_selector(list_ids: str, headers: EnvironHeaders) -> 'BoardGameGeekListSelector':
+        field_reduction = FieldReduction.create_field_reduction(headers)
         geek_list = [list_id.strip() for list_id in list_ids.split(',')]
         return BoardGameGeekListSelector(BoardGameFactory.create_client(),
                                          BoardGameFactory.create_legacy_client(),
+                                         field_reduction,
                                          geek_list)
 
     @staticmethod
@@ -51,8 +56,9 @@ class BoardGameFactory(object):
 
 class BoardGameSelector(metaclass=abc.ABCMeta):
 
-    def __init__(self, ids: List[str]):
+    def __init__(self, ids: List[str], field_reduction: FieldReduction):
         self._ids = ids
+        self._field_reduction = field_reduction
 
     def __get_games(self, ids: List[str]) -> List[BaseGame]:
         games = []
@@ -61,8 +67,9 @@ class BoardGameSelector(metaclass=abc.ABCMeta):
         games.sort(key=lambda base_game: base_game.name)
         return games
 
-    def get_games_matching_filter(self, game_filter: filter_processor) -> List[BaseGame]:
-        return [item for item in self.__get_games(self._ids) if not game_filter.filter_game(item)]
+    def get_games_matching_filter(self, game_filter: filter_processor) -> List[dict]:
+        filtered_games = [item for item in self.__get_games(self._ids) if not game_filter.filter_game(item)]
+        return self._field_reduction.clean_response(filtered_games)
 
     @abc.abstractmethod
     def get_games_for_id(self, bgg_id: str) -> List[BaseGame]:
@@ -71,8 +78,8 @@ class BoardGameSelector(metaclass=abc.ABCMeta):
 
 class BoardGamePlayerSelector(BoardGameSelector):
 
-    def __init__(self, bgg: BGGClient, users: List[str]):
-        super().__init__(users)
+    def __init__(self, bgg: BGGClient, field_reduction: FieldReduction, users: List[str]):
+        super().__init__(users, field_reduction)
         self._bgg = bgg
 
     def get_games_for_id(self, player: str) -> List[BaseGame]:
@@ -84,8 +91,9 @@ class BoardGamePlayerSelector(BoardGameSelector):
 
 class BoardGameGeekListSelector(BoardGameSelector):
 
-    def __init__(self, bgg: BGGClient, bgg_legacy: BGGClientLegacy, geek_lists: List[str]):
-        super().__init__(geek_lists)
+    def __init__(self, bgg: BGGClient, bgg_legacy: BGGClientLegacy, field_reduction: FieldReduction,
+                 geek_lists: List[str]):
+        super().__init__(geek_lists, field_reduction)
         self._bgg_legacy = bgg_legacy
         self._bgg = bgg
 
