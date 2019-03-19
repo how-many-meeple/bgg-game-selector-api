@@ -19,12 +19,13 @@ If the geeklist is not found or empty the service will return a 404.
 ### Search BGG games list
 `/search/<string>`
 
-## Filter Headers
+## Filter and field Headers
 
-The collection and geek list APIs can be filtered using the following headers.
+The collection and geek list APIs can be filtered and the response reduced using the following headers.
 
 | Header Name | Value Type | Description |
 |----|----|----|
 | Bgg-Filter-Player-Count | Int | Number of players game must support |
 | Bgg-Filter-Min-Duration | Int | Game must last at least this long |
 | Bgg-Filter-Max-Duration | Int | Game must not last longer than this |
+| Bgg-Field-Whitelist | String | Comma separated list of fields to include in the game response list |
