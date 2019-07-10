@@ -3,5 +3,5 @@ ADD . /app
 WORKDIR /app
 
 RUN pip install -r requirements.txt
-EXPOSE 80
-CMD ["gunicorn", "-b", "0.0.0.0:80", "app"]
+EXPOSE 8080
+CMD ["gunicorn", "-k", "gevent", "-w", "3", "-b", "0.0.0.0:8080", "app"]
