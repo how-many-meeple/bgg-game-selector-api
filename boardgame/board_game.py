@@ -84,9 +84,14 @@ class BoardGamePlayerSelector(BoardGameSelector):
 
     def get_games_for_id(self, player: str) -> List[BaseGame]:
         try:
-            return self._bgg.collection(player, own=True).items
+            game_list = self._bgg.collection(player, own=True).items
+            return self.__get_games_from_collection_list(game_list)
         except BGGItemNotFoundError as error:
             raise BoardGameUserNotFoundError(error, f"No user found called '{player}'")
+
+    def __get_games_from_collection_list(self, games: List[BaseGame]) -> List[BaseGame]:
+        game_id_list = [game.id for game in games]
+        return self._bgg.game_list(game_id_list)
 
 
 class BoardGameGeekListSelector(BoardGameSelector):
