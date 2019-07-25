@@ -1,18 +1,19 @@
 import abc
+import logging
 from typing import Optional
 
-from boardgamegeek.objects.games import BaseGame, PlayerSuggestion
-import logging
+from boardgamegeek.objects.games import BaseGame, BoardGame
 from werkzeug.datastructures import EnvironHeaders
 
 log = logging.getLogger()
 
 
 class Filter(metaclass=abc.ABCMeta):
-    _use_recommended_players_count = "Bgg-Filter-Using-Recommended-Players"
-    _players_count = "Bgg-Filter-Player-Count"
-    _min_duration = "Bgg-Filter-Min-Duration"
-    _max_duration = "Bgg-Filter-Max-Duration"
+    _include_expansions_header_name = "Bgg-Include-Expansions"
+    _use_recommended_players_count_header_name = "Bgg-Filter-Using-Recommended-Players"
+    _players_count_header_name = "Bgg-Filter-Player-Count"
+    _min_duration_header_name = "Bgg-Filter-Min-Duration"
+    _max_duration_header_name = "Bgg-Filter-Max-Duration"
 
     def __init__(self, successor=None):
         self._successor = successor
@@ -23,10 +24,11 @@ class Filter(metaclass=abc.ABCMeta):
 
     @staticmethod
     def create_filter_chain(headers: EnvironHeaders):
-        return PlayersFilter(headers.get(Filter._players_count),
-                             headers.get(Filter._use_recommended_players_count),
-                             DurationFilter(headers.get(Filter._min_duration),
-                                            headers.get(Filter._max_duration)))
+        return ExpansionsFilter(headers.get(Filter._include_expansions_header_name),
+                                PlayersFilter(headers.get(Filter._players_count_header_name),
+                                              headers.get(Filter._use_recommended_players_count_header_name),
+                                              DurationFilter(headers.get(Filter._min_duration_header_name),
+                                                             headers.get(Filter._max_duration_header_name))));
 
 
 class PlayersFilter(Filter):
@@ -62,6 +64,22 @@ class PlayersFilter(Filter):
         if len(recommended) > 0:
             return min(recommended), max(recommended)
         raise AttributeError
+
+
+class ExpansionsFilter(Filter):
+    def __init__(self, include_expansions_header: Optional[str],
+                 successor=None):
+        super().__init__(successor)
+        self._include_expansions = False
+        if include_expansions_header and include_expansions_header.lower() == "true":
+            self._include_expansions = True
+
+    def filter(self, game: BoardGame) -> bool:
+        if game.expansion is True and self._include_expansions is False:
+            return True
+        elif self._successor:
+            return self._successor.filter(game)
+        return False
 
 
 class DurationFilter(Filter):
