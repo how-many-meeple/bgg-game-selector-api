@@ -15,6 +15,7 @@ class Filter(metaclass=abc.ABCMeta):
     _min_duration_header_name = "Bgg-Filter-Min-Duration"
     _max_duration_header_name = "Bgg-Filter-Max-Duration"
     _max_complexity_duration_header_name = "Bgg-Filter-Max-Complexity"
+    _mechanics_header_name = "Bgg-Filter-Mechanic"
 
     def __init__(self, successor=None):
         self._successor = successor
@@ -29,7 +30,12 @@ class Filter(metaclass=abc.ABCMeta):
                                 PlayersFilter(headers.get(Filter._players_count_header_name),
                                               headers.get(Filter._use_recommended_players_count_header_name),
                                               DurationFilter(headers.get(Filter._min_duration_header_name),
-                                                             headers.get(Filter._max_duration_header_name))))
+                                                             headers.get(Filter._max_duration_header_name),
+                                                             ComplexityFilter(headers.get(
+                                                                 Filter._max_complexity_duration_header_name),
+                                                                              MechanicFilter(headers.get(
+                                                                                  Filter._mechanics_header_name)
+                                                                                             )))))
 
 
 class PlayersFilter(Filter):
