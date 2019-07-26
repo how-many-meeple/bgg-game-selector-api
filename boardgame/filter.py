@@ -1,6 +1,6 @@
 import abc
 import logging
-from typing import Optional
+from typing import Optional, List
 
 from boardgamegeek.objects.games import BoardGame
 from werkzeug.datastructures import EnvironHeaders
@@ -14,6 +14,7 @@ class Filter(metaclass=abc.ABCMeta):
     _players_count_header_name = "Bgg-Filter-Player-Count"
     _min_duration_header_name = "Bgg-Filter-Min-Duration"
     _max_duration_header_name = "Bgg-Filter-Max-Duration"
+    _max_complexity_duration_header_name = "Bgg-Filter-Max-Complexity"
 
     def __init__(self, successor=None):
         self._successor = successor
@@ -28,7 +29,7 @@ class Filter(metaclass=abc.ABCMeta):
                                 PlayersFilter(headers.get(Filter._players_count_header_name),
                                               headers.get(Filter._use_recommended_players_count_header_name),
                                               DurationFilter(headers.get(Filter._min_duration_header_name),
-                                                             headers.get(Filter._max_duration_header_name))));
+                                                             headers.get(Filter._max_duration_header_name))))
 
 
 class PlayersFilter(Filter):
@@ -66,6 +67,21 @@ class PlayersFilter(Filter):
         raise AttributeError
 
 
+class ComplexityFilter(Filter):
+    def __init__(self, filter_complexity_header: Optional[str],
+                 successor=None):
+        super().__init__(successor)
+        self._complexity = float(filter_complexity_header if filter_complexity_header else 0)
+
+    def filter(self, game: BoardGame) -> bool:
+        weight = float(game.rating_average_weight if game.rating_average_weight else 0)
+        if self._complexity and weight > self._complexity:
+            return True
+        elif self._successor:
+            return self._successor.filter(game)
+        return False
+
+
 class ExpansionsFilter(Filter):
     def __init__(self, include_expansions_header: Optional[str],
                  successor=None):
@@ -91,6 +107,31 @@ class DurationFilter(Filter):
     def filter(self, game: BoardGame) -> bool:
         if (self._min_time and game.min_playing_time < self._min_time) \
                 or (self._max_time and game.max_playing_time > self._max_time):
+            return True
+        elif self._successor:
+            return self._successor.filter(game)
+        return False
+
+
+class MechanicFilter(Filter):
+    @staticmethod
+    def extract(str_mechanic) -> List[str]:
+        str_mechanic = str_mechanic.strip("[]")
+        return [mechanic.strip() for mechanic in str_mechanic.split(",")]
+
+    def __init__(self, filter_mechanic: Optional[str], successor=None):
+        super().__init__(successor)
+        self._filter_mechanics: List[str] = MechanicFilter.extract(filter_mechanic) if filter_mechanic else []
+
+    def filter(self, game: BoardGame) -> bool:
+        def check_lists_have_matching_content(game_mechanics: List[str], users_requested_mechanics: List[str]) -> bool:
+            if not game_mechanics or len(game.mechanics) == 0:
+                return True
+            common_mechanics = set(game_mechanics) & set(users_requested_mechanics)
+            return len(common_mechanics) == 0
+
+        if len(self._filter_mechanics) > 0 and check_lists_have_matching_content(game.mechanics,
+                                                                                 self._filter_mechanics):
             return True
         elif self._successor:
             return self._successor.filter(game)
