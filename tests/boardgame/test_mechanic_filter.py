@@ -32,3 +32,9 @@ class TestMechanicFilter(TestCase):
         mock_game.mechanics = ["Card Drafting"]
         mechanic_filter = MechanicFilter('[Cooperative Play, Grid Movement]')
         self.assertTrue(mechanic_filter.filter(mock_game))
+
+    def test_filter_returns_false_if_game_matches_mechanics_without_spacing(self):
+        mock_game = Mock(BoardGame)
+        mock_game.mechanics = ["Cooperative Play"]
+        mechanic_filter = MechanicFilter('Cooperative Play,Grid Movement')
+        self.assertFalse(mechanic_filter.filter(mock_game))
