@@ -28,4 +28,6 @@ The collection and geek list APIs can be filtered and the response reduced using
 | Bgg-Filter-Player-Count | Int | Number of players game must support |
 | Bgg-Filter-Min-Duration | Int | Game must last at least this long |
 | Bgg-Filter-Max-Duration | Int | Game must not last longer than this |
+| Bgg-Filter-Using-Recommended-Players | Boolean | Whether or not to use user recommended player counts |
+| Bgg-Include-Expansions | Boolean | Do we include expansions or not in the game list |
 | Bgg-Field-Whitelist | String | Comma separated list of fields to include in the game response list |
