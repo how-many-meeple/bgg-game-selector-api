@@ -6,7 +6,7 @@ from boardgamegeek.objects.games import BoardGame
 from boardgame.filter import ExpansionsFilter
 
 
-class TestPlayersFilter(TestCase):
+class TestExpansionsFilter(TestCase):
     def test_filter_passes_to_successor(self):
         mock_filter = Mock(ExpansionsFilter)
         mock_game = Mock(BoardGame)

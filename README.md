@@ -30,4 +30,6 @@ The collection and geek list APIs can be filtered and the response reduced using
 | Bgg-Filter-Max-Duration | Int | Game must not last longer than this |
 | Bgg-Filter-Using-Recommended-Players | Boolean | Whether or not to use user recommended player counts |
 | Bgg-Include-Expansions | Boolean | Do we include expansions or not in the game list |
+| Bgg-Filter-Max-Complexity | Float | Maximum game difficulty (out of 5) |
+| Bgg-Filter-Mechanic | String | Game mechanic, as defined by BGG, e.g. "[Cooperative Play]" |
 | Bgg-Field-Whitelist | String | Comma separated list of fields to include in the game response list |
