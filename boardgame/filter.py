@@ -33,9 +33,9 @@ class Filter(metaclass=abc.ABCMeta):
                                                              headers.get(Filter._max_duration_header_name),
                                                              ComplexityFilter(headers.get(
                                                                  Filter._max_complexity_duration_header_name),
-                                                                              MechanicFilter(headers.get(
-                                                                                  Filter._mechanics_header_name)
-                                                                                             )))))
+                                                                 MechanicFilter(headers.get(
+                                                                     Filter._mechanics_header_name)
+                                                                 )))))
 
 
 class PlayersFilter(Filter):
@@ -123,6 +123,8 @@ class MechanicFilter(Filter):
     @staticmethod
     def extract(str_mechanic) -> List[str]:
         str_mechanic = str_mechanic.strip("[]")
+        if not str_mechanic:
+            return []
         return [mechanic.strip() for mechanic in str_mechanic.split(",")]
 
     def __init__(self, filter_mechanic: Optional[str], successor=None):
@@ -131,7 +133,7 @@ class MechanicFilter(Filter):
 
     def filter(self, game: BoardGame) -> bool:
         def check_lists_have_matching_content(game_mechanics: List[str], users_requested_mechanics: List[str]) -> bool:
-            if not game_mechanics or len(game.mechanics) == 0:
+            if not game_mechanics or len(game_mechanics) == 0:
                 return True
             common_mechanics = set(game_mechanics) & set(users_requested_mechanics)
             return len(common_mechanics) == 0
