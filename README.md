@@ -19,6 +19,18 @@ If the geeklist is not found or empty the service will return a 404.
 ### Search BGG games list
 `/search/<string>`
 
+## Cache
+
+### Request Cache
+
+Requests are cached on the Board Game Geek library.  Each API request is cached for a duration of 24 hours. 
+
+### Game Cache
+
+Each game is cached individually.  When a collection or geeklist is loaded we first check the sqlite db for cached 
+entries, those not found are retrieved and stored in the cache for the next request.  By default we cache games for a
+week.
+
 ## Filter and field Headers
 
 The collection and geek list APIs can be filtered and the response reduced using the following headers.
