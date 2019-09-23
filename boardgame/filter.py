@@ -1,5 +1,6 @@
 import abc
 import logging
+import re
 from typing import Optional, List
 
 from boardgamegeek.objects.games import BoardGame
@@ -127,6 +128,11 @@ class MechanicFilter(Filter):
             return []
         return [mechanic.strip() for mechanic in str_mechanic.split(",")]
 
+    def remove_mechanic_prefix(self, mechanic):
+        if not mechanic:
+            return mechanic
+        return re.sub(r"^\w{2,3}-[\w\d]{2,3}\s+", "", mechanic)
+
     def __init__(self, filter_mechanic: Optional[str], successor=None):
         super().__init__(successor)
         self._filter_mechanics: List[str] = MechanicFilter.extract(filter_mechanic) if filter_mechanic else []
@@ -135,7 +141,9 @@ class MechanicFilter(Filter):
         def check_lists_have_matching_content(game_mechanics: List[str], users_requested_mechanics: List[str]) -> bool:
             if not game_mechanics or len(game_mechanics) == 0:
                 return True
-            common_mechanics = set(game_mechanics) & set(users_requested_mechanics)
+            sanitised_game_mechanics = [self.remove_mechanic_prefix(mechanic) for mechanic in game_mechanics]
+            sanitised_user_mechanics = [self.remove_mechanic_prefix(mechanic) for mechanic in users_requested_mechanics]
+            common_mechanics = set(sanitised_game_mechanics) & set(sanitised_user_mechanics)
             return len(common_mechanics) == 0
 
         if len(self._filter_mechanics) > 0 and check_lists_have_matching_content(game.mechanics,
