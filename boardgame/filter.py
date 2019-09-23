@@ -131,7 +131,7 @@ class MechanicFilter(Filter):
     def remove_mechanic_prefix(self, mechanic):
         if not mechanic:
             return mechanic
-        return re.sub(r"^\w{2,3}-\d{2}\s+", "", mechanic)
+        return re.sub(r"^\w{2,3}-[\w\d]{2,3}\s+", "", mechanic)
 
     def __init__(self, filter_mechanic: Optional[str], successor=None):
         super().__init__(successor)
