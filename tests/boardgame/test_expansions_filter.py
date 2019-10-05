@@ -10,7 +10,8 @@ class TestExpansionsFilter(TestCase):
     def test_filter_passes_to_successor(self):
         mock_filter = Mock(ExpansionsFilter)
         mock_game = Mock(BoardGame)
-        expansions_filter = ExpansionsFilter(None, mock_filter)
+        expansions_filter = ExpansionsFilter(None)
+        expansions_filter.set_successor(mock_filter)
         expansions_filter.filter(mock_game)
         mock_filter.filter.assert_called_once()
 

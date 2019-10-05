@@ -11,7 +11,8 @@ class TestMechanicFilter(TestCase):
         mock_filter = Mock(MechanicFilter)
         mock_game = Mock(BoardGame)
         mock_game.mechanics = None
-        mechanic_filter = MechanicFilter(None, mock_filter)
+        mechanic_filter = MechanicFilter(None)
+        mechanic_filter.set_successor(mock_filter)
         mechanic_filter.filter(mock_game)
         mock_filter.filter.assert_called_once()
 

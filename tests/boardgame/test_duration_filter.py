@@ -10,7 +10,8 @@ class TestDurationFilter(TestCase):
     def test_filter_passes_to_successor(self):
         mock_filter = Mock(DurationFilter)
         mock_game = Mock(BoardGame)
-        duration_filter = DurationFilter(None, None, mock_filter)
+        duration_filter = DurationFilter(None, None)
+        duration_filter.set_successor(mock_filter)
         duration_filter.filter(mock_game)
         mock_filter.filter.assert_called_once()
 
