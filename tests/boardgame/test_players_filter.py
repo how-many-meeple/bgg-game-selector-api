@@ -11,7 +11,8 @@ class TestPlayersFilter(TestCase):
         mock_filter = Mock(PlayersFilter)
         mock_game = Mock(BoardGame)
         mock_game.player_suggestions = []
-        player_filter = PlayersFilter(None, None, mock_filter)
+        player_filter = PlayersFilter(None, None)
+        player_filter.set_successor(mock_filter)
         player_filter.filter(mock_game)
         mock_filter.filter.assert_called_once()
 
