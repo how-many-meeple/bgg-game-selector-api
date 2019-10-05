@@ -17,9 +17,14 @@ class Filter(metaclass=abc.ABCMeta):
     _max_duration_header_name = "Bgg-Filter-Max-Duration"
     _max_complexity_duration_header_name = "Bgg-Filter-Max-Complexity"
     _mechanics_header_name = "Bgg-Filter-Mechanic"
+    _min_rating_header_name = "Bgg-Filter-Min-Rating"
 
-    def __init__(self, successor=None):
+    def __init__(self):
+        self._successor = None
+
+    def set_successor(self, successor: 'Filter') -> 'Filter':
         self._successor = successor
+        return successor
 
     @abc.abstractmethod
     def filter(self, game: BoardGame) -> bool:
@@ -27,22 +32,27 @@ class Filter(metaclass=abc.ABCMeta):
 
     @staticmethod
     def create_filter_chain(headers: EnvironHeaders):
-        return ExpansionsFilter(headers.get(Filter._include_expansions_header_name),
-                                PlayersFilter(headers.get(Filter._players_count_header_name),
-                                              headers.get(Filter._use_recommended_players_count_header_name),
-                                              DurationFilter(headers.get(Filter._min_duration_header_name),
-                                                             headers.get(Filter._max_duration_header_name),
-                                                             ComplexityFilter(headers.get(
-                                                                 Filter._max_complexity_duration_header_name),
-                                                                 MechanicFilter(headers.get(
-                                                                     Filter._mechanics_header_name)
-                                                                 )))))
+        exapnsions = ExpansionsFilter(headers.get(Filter._include_expansions_header_name))
+        players = PlayersFilter(headers.get(Filter._players_count_header_name),
+                                headers.get(Filter._use_recommended_players_count_header_name))
+        duration = DurationFilter(headers.get(Filter._min_duration_header_name),
+                                  headers.get(Filter._max_duration_header_name))
+        complexity = ComplexityFilter(headers.get(
+            Filter._max_complexity_duration_header_name))
+        mechanics = MechanicFilter(headers.get(
+            Filter._mechanics_header_name))
+        rating = RatingFilter(headers.get(Filter._min_rating_header_name))
+
+        return exapnsions.set_successor(players) \
+            .set_successor(duration) \
+            .set_successor(complexity) \
+            .set_successor(mechanics) \
+            .set_successor(rating)
 
 
 class PlayersFilter(Filter):
-    def __init__(self, filter_player_count_header: Optional[str], filter_recommended_header: Optional[str],
-                 successor=None):
-        super().__init__(successor)
+    def __init__(self, filter_player_count_header: Optional[str], filter_recommended_header: Optional[str]):
+        super().__init__()
         self._players_count = int(filter_player_count_header) if filter_player_count_header else None
         self._use_recommended = True
         if filter_recommended_header and filter_recommended_header.lower() == "false":
@@ -75,9 +85,8 @@ class PlayersFilter(Filter):
 
 
 class ComplexityFilter(Filter):
-    def __init__(self, filter_complexity_header: Optional[str],
-                 successor=None):
-        super().__init__(successor)
+    def __init__(self, filter_complexity_header: Optional[str]):
+        super().__init__()
         self._complexity = float(filter_complexity_header if filter_complexity_header else 0)
 
     def filter(self, game: BoardGame) -> bool:
@@ -90,9 +99,8 @@ class ComplexityFilter(Filter):
 
 
 class ExpansionsFilter(Filter):
-    def __init__(self, include_expansions_header: Optional[str],
-                 successor=None):
-        super().__init__(successor)
+    def __init__(self, include_expansions_header: Optional[str]):
+        super().__init__()
         self._include_expansions = False
         if include_expansions_header and include_expansions_header.lower() == "true":
             self._include_expansions = True
@@ -106,8 +114,8 @@ class ExpansionsFilter(Filter):
 
 
 class DurationFilter(Filter):
-    def __init__(self, filter_min_time: Optional[str], filter_max_time: Optional[str], successor=None):
-        super().__init__(successor)
+    def __init__(self, filter_min_time: Optional[str], filter_max_time: Optional[str]):
+        super().__init__()
         self._min_time = int(filter_min_time) if filter_min_time else None
         self._max_time = int(filter_max_time) if filter_max_time else None
 
@@ -133,8 +141,8 @@ class MechanicFilter(Filter):
             return mechanic
         return re.sub(r"^\w{2,3}-[\w\d]{2,3}\s+", "", mechanic)
 
-    def __init__(self, filter_mechanic: Optional[str], successor=None):
-        super().__init__(successor)
+    def __init__(self, filter_mechanic: Optional[str]):
+        super().__init__()
         self._filter_mechanics: List[str] = MechanicFilter.extract(filter_mechanic) if filter_mechanic else []
 
     def filter(self, game: BoardGame) -> bool:
@@ -152,3 +160,15 @@ class MechanicFilter(Filter):
         elif self._successor:
             return self._successor.filter(game)
         return False
+
+
+class RatingFilter(Filter):
+    def __init__(self, filter_min_rating_header: Optional[str]):
+        super().__init__()
+        self._min_rating = float(filter_min_rating_header) if filter_min_rating_header else None
+
+    def filter(self, game: BoardGame) -> bool:
+        if self._min_rating and (not game.rating_average or self._min_rating > game.rating_average):
+            return True
+        elif self._successor:
+            return self._successor.filter(game)

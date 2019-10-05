@@ -11,7 +11,8 @@ class TestComplexityFilter(TestCase):
         mock_filter = Mock(ComplexityFilter)
         mock_game = Mock(BoardGame)
         mock_game.rating_average_weight = None
-        expansions_filter = ComplexityFilter(None, mock_filter)
+        expansions_filter = ComplexityFilter(None)
+        expansions_filter.set_successor(mock_filter)
         expansions_filter.filter(mock_game)
         mock_filter.filter.assert_called_once()
 
