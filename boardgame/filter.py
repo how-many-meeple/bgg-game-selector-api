@@ -32,7 +32,7 @@ class Filter(metaclass=abc.ABCMeta):
 
     @staticmethod
     def create_filter_chain(headers: EnvironHeaders):
-        exapnsions = ExpansionsFilter(headers.get(Filter._include_expansions_header_name))
+        expansions = ExpansionsFilter(headers.get(Filter._include_expansions_header_name))
         players = PlayersFilter(headers.get(Filter._players_count_header_name),
                                 headers.get(Filter._use_recommended_players_count_header_name))
         duration = DurationFilter(headers.get(Filter._min_duration_header_name),
@@ -43,11 +43,13 @@ class Filter(metaclass=abc.ABCMeta):
             Filter._mechanics_header_name))
         rating = RatingFilter(headers.get(Filter._min_rating_header_name))
 
-        return exapnsions.set_successor(players) \
+        expansions.set_successor(players) \
             .set_successor(duration) \
             .set_successor(complexity) \
             .set_successor(mechanics) \
             .set_successor(rating)
+
+        return expansions
 
 
 class PlayersFilter(Filter):
