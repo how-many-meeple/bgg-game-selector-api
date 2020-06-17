@@ -1,4 +1,6 @@
 import abc
+import logging
+import os
 from typing import List
 
 from boardgamegeek import BGGClient, CacheBackendSqlite, BGGItemNotFoundError
@@ -6,8 +8,9 @@ from boardgamegeek.objects.games import BaseGame, BoardGame
 from werkzeug.datastructures import EnvironHeaders
 
 from boardgame import filter_processor
+from boardgame.database import DatabaseConnectionDetails
 from boardgame.field_reduction import FieldReduction
-from boardgame.game_cache import GameCache
+from boardgame.cache.game_cache import GameCache
 from boardgame.legacy_api import BGGClientLegacy
 
 
@@ -24,8 +27,12 @@ class BoardGameListNotFoundError(Exception):
 
 class BoardGameFactory(object):
     item_cache_duration = 86400  # one day in seconds
-    game_cache_duration = 604800  # one week in seconds
     cache_location = "cache.db"
+    database_details = DatabaseConnectionDetails(host=os.getenv('database_host'),
+                                                 username=os.getenv('database_username'),
+                                                 password=os.getenv('database_password'),
+                                                 database=os.getenv('database_name')
+                                                 )
 
     @staticmethod
     def create_client():
@@ -44,7 +51,7 @@ class BoardGameFactory(object):
 
     @staticmethod
     def create_game_cache():
-        return GameCache(cache_file=BoardGameFactory.cache_location, cache_length=BoardGameFactory.game_cache_duration)
+        return GameCache(BoardGameFactory.database_details)
 
     @staticmethod
     def create_player_selector(players: str, headers: EnvironHeaders) -> 'BoardGamePlayerSelector':
@@ -64,24 +71,19 @@ class BoardGameFactory(object):
                                          geek_list)
 
     @staticmethod
+    def create_game_refresher() -> 'BoardGameCronRefresher':
+        return BoardGameCronRefresher(BoardGameFactory.create_client(),
+                                      BoardGameFactory.create_game_cache())
+
+    @staticmethod
     def create_search() -> 'BoardGameSearch':
         return BoardGameSearch(BoardGameFactory.create_client())
 
 
-class BoardGameSelector(metaclass=abc.ABCMeta):
+class BoardGameLoadGameFromBgg(object):
 
-    def __init__(self, ids: List[str], game_cache: GameCache, field_reduction: FieldReduction):
-        self._ids = ids
+    def __init__(self, game_cache: GameCache):
         self.game_cache = game_cache
-        self._field_reduction = field_reduction
-        self.game_cache.timeout_cache()
-
-    def __get_games(self, ids: List[str]) -> List[BoardGame]:
-        games = []
-        for bgg_id in ids:
-            games = games + self.get_games_for_id(bgg_id)
-        games.sort(key=lambda base_game: base_game.name)
-        return games
 
     def __get_games_from_cache(self, ids: list):
         games_from_cache = []
@@ -91,19 +93,44 @@ class BoardGameSelector(metaclass=abc.ABCMeta):
                 games_from_cache = games_from_cache + [game]
         return games_from_cache
 
-    def get_games_from_bgg(self, bgg: BGGClient, game_ids) -> List[BoardGame]:
+    def get_games_from_bgg(self, bgg: BGGClient, game_ids, no_cache: bool = False) -> List[BoardGame]:
         uncached_games = []
-        found_cache_games = self.__get_games_from_cache(game_ids)
+        found_cache_games = []
+        if not no_cache:
+            found_cache_games = self.__get_games_from_cache(game_ids)
         cached_ids = self.__extract_ids_from_games(found_cache_games)
         game_list_not_found = [id for id in game_ids if id not in cached_ids]
         if game_list_not_found:
             uncached_games = bgg.game_list(game_list_not_found)
             for game in uncached_games:
                 self.game_cache.save(game)
+        all_games = found_cache_games + uncached_games
+        logging.info(f"{len(all_games)} BGG games loaded, "
+                     f"{len(found_cache_games)} from cache, "
+                     f"{len(uncached_games)} from BGG")
         return found_cache_games + uncached_games
 
     def __extract_ids_from_games(self, games: List[BoardGame]):
         return [game.id for game in games]
+
+
+class BoardGameSelector(BoardGameLoadGameFromBgg, metaclass=abc.ABCMeta):
+
+    def __init__(self, ids: List[str], game_cache: GameCache, field_reduction: FieldReduction):
+        super().__init__(game_cache)
+        self._ids = ids
+        self.game_cache = game_cache
+        self._field_reduction = field_reduction
+
+    def __del__(self):
+        self.game_cache.close()
+
+    def __get_games(self, ids: List[str]) -> List[BoardGame]:
+        games = []
+        for bgg_id in ids:
+            games = games + self.get_games_for_id(bgg_id)
+        games.sort(key=lambda base_game: base_game.name)
+        return games
 
     def get_games_matching_filter(self, game_filter: filter_processor) -> List[dict]:
         filtered_games = [item for item in self.__get_games(self._ids) if not game_filter.filter_game(item)]
@@ -134,7 +161,10 @@ class BoardGamePlayerSelector(BoardGameSelector):
 
 class BoardGameGeekListSelector(BoardGameSelector):
 
-    def __init__(self, bgg: BGGClient, bgg_legacy: BGGClientLegacy, game_cache: GameCache,
+    def __init__(self,
+                 bgg: BGGClient,
+                 bgg_legacy: BGGClientLegacy,
+                 game_cache: GameCache,
                  field_reduction: FieldReduction,
                  geek_lists: List[str]):
         super().__init__(geek_lists, game_cache, field_reduction)
@@ -149,6 +179,21 @@ class BoardGameGeekListSelector(BoardGameSelector):
 
     def __get_games_from_id_list(self, game_ids) -> List[BoardGame]:
         return self.get_games_from_bgg(self._bgg, game_ids)
+
+
+class BoardGameCronRefresher(BoardGameLoadGameFromBgg):
+
+    def __init__(self, bgg: BGGClient, game_cache: GameCache):
+        super().__init__(game_cache)
+        self._bgg = bgg
+
+    def refresh_stale_games(self):
+        game_id_list = self.game_cache.load_stale()
+        if game_id_list and len(game_id_list) > 0:
+            self.__get_games_from_id_list(game_id_list)
+
+    def __get_games_from_id_list(self, game_ids) -> List[BoardGame]:
+        return self.get_games_from_bgg(self._bgg, game_ids, no_cache=True)
 
 
 class BoardGameSearch(object):

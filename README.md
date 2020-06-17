@@ -19,17 +19,24 @@ If the geeklist is not found or empty the service will return a 404.
 ### Search BGG games list
 `/search/<string>`
 
+### Check the last cache
+`/last_cache_refresh`
+
+Utility endpoint to check the scheduler is operating.
+
 ## Cache
 
 ### Request Cache
 
-Requests are cached on the Board Game Geek library.  Each API request is cached for a duration of 24 hours. 
+Requests are cached on the Board Game Geek library.  Each API request is cached for a duration of 24 hours. This will
+later be changed to update the collection/geeklist without a user request so that the API consumer sees rapid and fresh
+cached content.
 
 ### Game Cache
 
-Each game is cached individually.  When a collection or geeklist is loaded we first check the sqlite db for cached 
-entries, those not found are retrieved and stored in the cache for the next request.  By default we cache games for a
-week.
+Each game is cached individually.  When a collection or geeklist is loaded we first check the mysql db for cached 
+entries, those not found are retrieved and stored in the cache for the next request.  We cache games forever with a 
+later periodic update.
 
 ## Filter and field Headers
 

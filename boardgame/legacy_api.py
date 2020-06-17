@@ -7,7 +7,6 @@ from boardgamegeek.utils import DEFAULT_REQUESTS_PER_MINUTE, request_and_parse_x
 
 from boardgame.loaders.geeklist import create_geeklist_from_xml, add_geeklist_items_from_xml
 
-log = logging.getLogger("boardgamegeek.legacy_api")
 
 API_ENDPOINT = 'http://www.boardgamegeek.com/xmlapi'
 
@@ -35,7 +34,7 @@ class BGGClientLegacy(BGGCommon):
         # Parameter validation
         if not listid:
             raise BGGValueError("List Id must be specified")
-        log.debug("retrieving list {}".format(listid))
+        logging.debug("retrieving list {}".format(listid))
 
         params = {}
         if comments: params["comments"] = 1

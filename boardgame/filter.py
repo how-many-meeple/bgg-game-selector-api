@@ -6,8 +6,6 @@ from typing import Optional, List
 from boardgamegeek.objects.games import BoardGame
 from werkzeug.datastructures import EnvironHeaders
 
-log = logging.getLogger()
-
 
 class Filter(metaclass=abc.ABCMeta):
     _include_expansions_header_name = "Bgg-Include-Expansions"

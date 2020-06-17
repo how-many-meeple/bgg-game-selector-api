@@ -4,3 +4,5 @@ boardgamegeek2==1.0.1
 flask
 flask-cors
 gevent==1.4.0
+mysql-connector-python==8.0.20
+Flask-APScheduler==1.11.0
