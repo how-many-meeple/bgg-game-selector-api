@@ -4,7 +4,7 @@ import re
 from typing import Optional, List
 
 from boardgamegeek.objects.games import BoardGame
-from werkzeug.datastructures import EnvironHeaders
+from werkzeug.datastructures import Headers
 
 log = logging.getLogger()
 
@@ -31,7 +31,7 @@ class Filter(metaclass=abc.ABCMeta):
         pass
 
     @staticmethod
-    def create_filter_chain(headers: EnvironHeaders):
+    def create_filter_chain(headers: Headers):
         expansions = ExpansionsFilter(headers.get(Filter._include_expansions_header_name))
         players = PlayersFilter(headers.get(Filter._players_count_header_name),
                                 headers.get(Filter._use_recommended_players_count_header_name))

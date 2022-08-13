@@ -1,7 +1,7 @@
 from typing import List, Optional
 
 from boardgamegeek.objects.games import BaseGame
-from werkzeug.datastructures import EnvironHeaders
+from werkzeug.datastructures import Headers
 
 
 class FieldReduction(object):
@@ -19,6 +19,6 @@ class FieldReduction(object):
         return {key: data[key] for key in self.fields if data.get(key)}
 
     @staticmethod
-    def create_field_reduction(headers: EnvironHeaders) -> 'FieldReduction':
+    def create_field_reduction(headers: Headers) -> 'FieldReduction':
         fields = headers.get(FieldReduction._BggFieldReductionHeader)
         return FieldReduction(fields.split(",") if fields else None)

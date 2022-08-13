@@ -1,14 +1,18 @@
 import abc
+import logging
 from typing import List
 
-from boardgamegeek import BGGClient, CacheBackendSqlite, BGGItemNotFoundError
+from boardgamegeek import BGGClient, BGGItemNotFoundError, BGGClientLegacy
+from boardgamegeek.cache import CacheBackendNone
 from boardgamegeek.objects.games import BaseGame, BoardGame
-from werkzeug.datastructures import EnvironHeaders
+from werkzeug.datastructures import Headers
 
 from boardgame import filter_processor
 from boardgame.field_reduction import FieldReduction
 from boardgame.game_cache import GameCache
-from boardgame.legacy_api import BGGClientLegacy
+from boardgame.game_list_cache import GameListCache
+
+logger = logging.getLogger()
 
 
 class BoardGameUserNotFoundError(Exception):
@@ -25,41 +29,47 @@ class BoardGameListNotFoundError(Exception):
 class BoardGameFactory(object):
     item_cache_duration = 86400  # one day in seconds
     game_cache_duration = 604800  # one week in seconds
-    cache_location = "cache.db"
 
     @staticmethod
     def create_client():
         return BGGClient(
-            cache=CacheBackendSqlite(path=BoardGameFactory.cache_location, ttl=BoardGameFactory.item_cache_duration),
+            cache=CacheBackendNone(),
             timeout=60,
             retry_delay=10, retries=6)
 
     @staticmethod
     def create_legacy_client():
         return BGGClientLegacy(
-            cache=CacheBackendSqlite(path=BoardGameFactory.cache_location, ttl=BoardGameFactory.item_cache_duration),
+            cache=CacheBackendNone(),
             timeout=60,
             retry_delay=10,
             retries=6)
 
     @staticmethod
     def create_game_cache():
-        return GameCache(cache_file=BoardGameFactory.cache_location, cache_length=BoardGameFactory.game_cache_duration)
+        return GameCache(cache_length=BoardGameFactory.game_cache_duration, table_name="game_cache")
 
     @staticmethod
-    def create_player_selector(players: str, headers: EnvironHeaders) -> 'BoardGamePlayerSelector':
+    def create_game_list_cache():
+        return GameListCache(cache_length=BoardGameFactory.item_cache_duration, table_name="game_list_cache")
+
+    @staticmethod
+    def create_player_selector(players: str, headers: Headers) -> 'BoardGamePlayerSelector':
         field_reduction = FieldReduction.create_field_reduction(headers)
         player_list = [player.strip() for player in players.split(',')]
-        return BoardGamePlayerSelector(BoardGameFactory.create_client(), BoardGameFactory.create_game_cache(),
+        return BoardGamePlayerSelector(BoardGameFactory.create_client(),
+                                       BoardGameFactory.create_game_cache(),
+                                       BoardGameFactory.create_game_list_cache(),
                                        field_reduction, player_list)
 
     @staticmethod
-    def create_list_selector(list_ids: str, headers: EnvironHeaders) -> 'BoardGameGeekListSelector':
+    def create_list_selector(list_ids: str, headers: Headers) -> 'BoardGameGeekListSelector':
         field_reduction = FieldReduction.create_field_reduction(headers)
         geek_list = [list_id.strip() for list_id in list_ids.split(',')]
         return BoardGameGeekListSelector(BoardGameFactory.create_client(),
                                          BoardGameFactory.create_legacy_client(),
                                          BoardGameFactory.create_game_cache(),
+                                         BoardGameFactory.create_game_list_cache(),
                                          field_reduction,
                                          geek_list)
 
@@ -70,11 +80,15 @@ class BoardGameFactory(object):
 
 class BoardGameSelector(metaclass=abc.ABCMeta):
 
-    def __init__(self, ids: List[str], game_cache: GameCache, field_reduction: FieldReduction):
+    def __init__(self,
+                 ids: List[str],
+                 game_cache: GameCache,
+                 game_list_cache: GameListCache,
+                 field_reduction: FieldReduction):
+        self._game_list_cache = game_list_cache
         self._ids = ids
         self.game_cache = game_cache
         self._field_reduction = field_reduction
-        self.game_cache.timeout_cache()
 
     def __get_games(self, ids: List[str]) -> List[BoardGame]:
         games = []
@@ -116,33 +130,40 @@ class BoardGameSelector(metaclass=abc.ABCMeta):
 
 class BoardGamePlayerSelector(BoardGameSelector):
 
-    def __init__(self, bgg: BGGClient, game_cache: GameCache, field_reduction: FieldReduction, users: List[str]):
-        super().__init__(users, game_cache, field_reduction)
+    def __init__(self,
+                 bgg: BGGClient,
+                 game_cache: GameCache,
+                 game_list_cache: GameListCache,
+                 field_reduction: FieldReduction,
+                 users: List[str]):
+        super().__init__(users, game_cache, game_list_cache, field_reduction)
         self._bgg = bgg
 
     def get_games_for_id(self, player: str) -> List[BoardGame]:
         try:
-            game_list = self._bgg.collection(player, own=True).items
-            return self.__get_games_from_collection_list(game_list)
+            game_id_list = self._game_list_cache.collection_games(collection=player,
+                                                                  client=self._bgg)
+            return self.get_games_from_bgg(self._bgg, game_id_list)
         except BGGItemNotFoundError as error:
             raise BoardGameUserNotFoundError(error, f"No user found called '{player}'")
-
-    def __get_games_from_collection_list(self, games: List[BoardGame]) -> List[BoardGame]:
-        game_id_list = [game.id for game in games]
-        return self.get_games_from_bgg(self._bgg, game_id_list)
 
 
 class BoardGameGeekListSelector(BoardGameSelector):
 
-    def __init__(self, bgg: BGGClient, bgg_legacy: BGGClientLegacy, game_cache: GameCache,
+    def __init__(self,
+                 bgg: BGGClient,
+                 bgg_legacy: BGGClientLegacy,
+                 game_cache: GameCache,
+                 game_list_cache: GameListCache,
                  field_reduction: FieldReduction,
                  geek_lists: List[str]):
-        super().__init__(geek_lists, game_cache, field_reduction)
+        super().__init__(geek_lists, game_cache, game_list_cache, field_reduction)
         self._bgg_legacy = bgg_legacy
         self._bgg = bgg
 
     def get_games_for_id(self, geek_list: str) -> List[BoardGame]:
-        game_id_list = [list_obj.object.id for list_obj in self._bgg_legacy.geeklist(geek_list).items]
+        game_id_list = self._game_list_cache.geeklist_games(geek_list=geek_list,
+                                                            client=self._bgg_legacy)
         if len(game_id_list) == 0:
             raise BoardGameListNotFoundError(f"List not found or contains no games '{geek_list}'")
         return self.__get_games_from_id_list(game_id_list)
