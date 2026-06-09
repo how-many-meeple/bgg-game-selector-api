@@ -137,3 +137,22 @@ class CacheRequestBackendMemory:
             expire_after=ttl,
             allowable_codes=(200,),
         )
+
+
+class CacheRequestBackendSQLite:
+    """
+    SQLite-backed cache for BGG API requests (local dev, persistent across restarts).
+
+    Provides requests_cache.CachedSession via .cache attribute for BGG library compatibility.
+    """
+
+    def __init__(self, ttl: int, db_path: str = "bgg_request_cache.sqlite"):
+        self.ttl = ttl
+        self.db_path = db_path
+        # BGG library expects .cache to be a requests_cache.CachedSession
+        self.cache = requests_cache.CachedSession(
+            cache_name=db_path.replace(".sqlite", ""),
+            backend="sqlite",
+            expire_after=ttl,
+            allowable_codes=(200,),
+        )

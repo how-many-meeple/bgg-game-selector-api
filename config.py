@@ -16,12 +16,22 @@ class Config:
     GAME_CACHE_DURATION = int(os.getenv("GAME_CACHE_DURATION", "604800"))  # 1 week
 
     # Cache Backend Selection
-    CACHE_BACKEND = os.getenv("CACHE_BACKEND", "dynamodb")  # 'dynamodb' or 'memory'
+    CACHE_BACKEND = os.getenv(
+        "CACHE_BACKEND", "dynamodb"
+    )  # 'dynamodb', 'sqlite', or 'memory'
 
     # DynamoDB Configuration
     DYNAMODB_REQUEST_TABLE = os.getenv("DYNAMODB_REQUEST_TABLE", "bgg-request-cache")
     DYNAMODB_GAME_TABLE = os.getenv("DYNAMODB_GAME_TABLE", "bgg-game-cache")
     DYNAMODB_REGION = os.getenv("AWS_REGION", "us-east-1")
+
+    # SQLite Configuration
+    SQLITE_REQUEST_CACHE_PATH = os.getenv(
+        "SQLITE_REQUEST_CACHE_PATH", "bgg_request_cache.sqlite"
+    )
+    SQLITE_GAME_CACHE_PATH = os.getenv(
+        "SQLITE_GAME_CACHE_PATH", "bgg_game_cache.sqlite"
+    )
 
     # Flask Configuration
     FLASK_ENV = os.getenv("FLASK_ENV", "production")
