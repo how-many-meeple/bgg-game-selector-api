@@ -371,12 +371,30 @@ docker run -p 8080:8080 \
 
 For serverless deployment with even lower costs:
 
-1. Package application with dependencies
-2. Deploy Lambda function with sufficient memory (512MB+)
-3. Configure API Gateway to proxy requests
-4. Set up IAM role with DynamoDB permissions
+```bash
+# Build with Docker
+python3 -m samcli build --use-container --template-file deployment/serverless-template.yaml --profile howmanymeeple
 
-See `deployment/` directory for infrastructure-as-code templates.
+# Deploy with BGG token
+python3 -m samcli deploy \
+  --template-file .aws-sam/build/template.yaml \
+  --stack-name bgg-game-selector-api \
+  --capabilities CAPABILITY_IAM \
+  --region us-east-1 \
+  --profile howmanymeeple \
+  --parameter-overrides \
+    EnvironmentName=production \
+    RateLimitPerMinute=100 \
+    BurstLimit=200 \
+    AllowedOrigins="https://*.howmanymeeple.com" \
+    BggAccessToken="your-bgg-api-token-here" \
+  --resolve-s3 \
+  --no-confirm-changeset
+```
+
+**Important:** Replace `your-bgg-api-token-here` with your actual BGG API token.
+
+See `deployment/` directory for full infrastructure-as-code templates.
 
 ## BGG XML API 2 Reference
 
