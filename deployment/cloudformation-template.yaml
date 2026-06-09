@@ -38,7 +38,30 @@ Parameters:
     AllowedValues: [512, 1024, 2048, 4096, 8192]
 
 Resources:
-  # DynamoDB Table for game cache
+  # DynamoDB Table for request cache (collections, searches)
+  RequestCacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${EnvironmentName}-bgg-request-cache
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Application
+          Value: bgg-game-selector
+        - Key: CacheType
+          Value: request-cache
+
+  # DynamoDB Table for game cache (individual game data)
   GameCacheTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -58,7 +81,7 @@ Resources:
           Value: !Ref EnvironmentName
         - Key: Application
           Value: bgg-game-selector
-        - Key: Purpose
+        - Key: CacheType
           Value: game-cache
 
   # ECS Cluster
@@ -119,7 +142,9 @@ Resources:
                   - dynamodb:Scan
                   - dynamodb:DescribeTable
                   - dynamodb:DescribeTimeToLive
-                Resource: !GetAtt GameCacheTable.Arn
+                Resource:
+                  - !GetAtt RequestCacheTable.Arn
+                  - !GetAtt GameCacheTable.Arn
 
   # ECS Task Definition
   TaskDefinition:
@@ -143,7 +168,9 @@ Resources:
           Environment:
             - Name: CACHE_BACKEND
               Value: dynamodb
-            - Name: DYNAMODB_TABLE_NAME
+            - Name: DYNAMODB_REQUEST_TABLE
+              Value: !Ref RequestCacheTable
+            - Name: DYNAMODB_GAME_TABLE
               Value: !Ref GameCacheTable
             - Name: AWS_REGION
               Value: !Ref AWS::Region
@@ -153,7 +180,7 @@ Resources:
               Value: '60'
             - Name: BGG_RETRIES
               Value: '6'
-            - Name: ITEM_CACHE_DURATION
+            - Name: REQUEST_CACHE_DURATION
               Value: '86400'
             - Name: GAME_CACHE_DURATION
               Value: '604800'
@@ -277,11 +304,17 @@ Outputs:
     Export:
       Name: !Sub ${EnvironmentName}-bgg-api-url
 
-  DynamoDBTableName:
+  DynamoDBRequestTableName:
+    Description: DynamoDB table name for request cache
+    Value: !Ref RequestCacheTable
+    Export:
+      Name: !Sub ${EnvironmentName}-bgg-request-cache-table
+
+  DynamoDBGameTableName:
     Description: DynamoDB table name for game cache
     Value: !Ref GameCacheTable
     Export:
-      Name: !Sub ${EnvironmentName}-bgg-cache-table
+      Name: !Sub ${EnvironmentName}-bgg-game-cache-table
 
   ECSClusterName:
     Description: ECS cluster name

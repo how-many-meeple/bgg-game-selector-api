@@ -34,23 +34,23 @@ Globals:
     Environment:
       Variables:
         CACHE_BACKEND: dynamodb
-        DYNAMODB_TABLE_NAME: !Ref GameCacheTable
+        DYNAMODB_REQUEST_TABLE: !Ref RequestCacheTable
+        DYNAMODB_GAME_TABLE: !Ref GameCacheTable
         AWS_REGION: !Ref AWS::Region
         FLASK_ENV: production
         BGG_TIMEOUT: '60'
         BGG_RETRIES: '6'
         BGG_RETRY_DELAY: '10'
-        ITEM_CACHE_DURATION: '86400'
+        REQUEST_CACHE_DURATION: '86400'
         GAME_CACHE_DURATION: '604800'
-        SQLITE_CACHE_FILE: '/tmp/cache.db'
 
 Resources:
-  # DynamoDB Table for game cache (FREE TIER: 25GB storage, 25 RCU/WCU)
-  GameCacheTable:
+  # DynamoDB Table for request cache (collections, searches) - FREE TIER
+  RequestCacheTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub ${EnvironmentName}-bgg-game-cache
-      BillingMode: PAY_PER_REQUEST  # Only pay for actual usage, no minimum charges
+      TableName: !Sub ${EnvironmentName}-bgg-request-cache
+      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
@@ -61,12 +61,41 @@ Resources:
         AttributeName: ttl
         Enabled: true
       PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: false  # Saves costs, enable for production if needed
+        PointInTimeRecoveryEnabled: false
       Tags:
         - Key: Environment
           Value: !Ref EnvironmentName
         - Key: Application
           Value: bgg-game-selector
+        - Key: CacheType
+          Value: request-cache
+        - Key: CostCenter
+          Value: free-tier
+
+  # DynamoDB Table for game cache (individual game data) - FREE TIER
+  GameCacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${EnvironmentName}-bgg-game-cache
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: false
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Application
+          Value: bgg-game-selector
+        - Key: CacheType
+          Value: game-cache
         - Key: CostCenter
           Value: free-tier
 
@@ -81,6 +110,8 @@ Resources:
       Architectures:
         - x86_64
       Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RequestCacheTable
         - DynamoDBCrudPolicy:
             TableName: !Ref GameCacheTable
       Events:
@@ -230,11 +261,17 @@ Outputs:
     Export:
       Name: !Sub ${EnvironmentName}-bgg-function-arn
 
-  DynamoDBTableName:
+  DynamoDBRequestTableName:
+    Description: DynamoDB table name for request cache
+    Value: !Ref RequestCacheTable
+    Export:
+      Name: !Sub ${EnvironmentName}-bgg-request-cache-table
+
+  DynamoDBGameTableName:
     Description: DynamoDB table name for game cache
     Value: !Ref GameCacheTable
     Export:
-      Name: !Sub ${EnvironmentName}-bgg-cache-table
+      Name: !Sub ${EnvironmentName}-bgg-game-cache-table
 
   EstimatedMonthlyCost:
     Description: Estimated monthly cost (within free tier limits)
