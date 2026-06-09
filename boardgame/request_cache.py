@@ -4,18 +4,21 @@ from typing import Optional
 
 import boto3
 import requests_cache
+from requests_cache.backends.base import DictStorage
 from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
 
-class CacheRequestDynamoDBStorage:
+class CacheRequestDynamoDBStorage(DictStorage):
     """
     Dict-like storage wrapper for DynamoDB table.
 
     Provides dict-like interface for requests_cache to store HTTP responses in DynamoDB.
     """
+
     def __init__(self, table_name: str, region: str, ttl: int):
+        super().__init__()
         self.table_name = table_name
         self.region = region
         self.ttl = ttl
@@ -93,6 +96,7 @@ class CacheRequestBackendDynamoDB:
 
     Provides requests_cache.CachedSession via .cache attribute for BGG library compatibility.
     """
+
     def __init__(self, table_name: str, ttl: int, region: str = "us-east-1"):
         self.table_name = table_name
         self.ttl = ttl
@@ -117,12 +121,14 @@ class CacheRequestBackendDynamoDB:
             self._dynamodb = boto3.resource("dynamodb", region_name=self.region)
         return self._dynamodb
 
+
 class CacheRequestBackendMemory:
     """
     Memory-backed cache for BGG API requests (local dev and Lambda).
 
     Provides requests_cache.CachedSession via .cache attribute for BGG library compatibility.
     """
+
     def __init__(self, ttl: int):
         self.ttl = ttl
         # BGG library expects .cache to be a requests_cache.CachedSession
