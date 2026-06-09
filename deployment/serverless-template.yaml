@@ -26,17 +26,21 @@ Parameters:
     MinValue: 50
     MaxValue: 5000
 
+  AllowedOrigins:
+    Type: String
+    Default: "https://*.howmanymeeple.com"
+    Description: Allowed CORS origins (comma-separated). Use '*' for development, specific domains for production.
+
 Globals:
   Function:
     Timeout: 30
     MemorySize: 512
-    Runtime: python3.11
+    Runtime: python3.13
     Environment:
       Variables:
         CACHE_BACKEND: dynamodb
         DYNAMODB_REQUEST_TABLE: !Ref RequestCacheTable
         DYNAMODB_GAME_TABLE: !Ref GameCacheTable
-        AWS_REGION: !Ref AWS::Region
         FLASK_ENV: production
         BGG_TIMEOUT: '60'
         BGG_RETRIES: '6'
@@ -45,6 +49,26 @@ Globals:
         GAME_CACHE_DURATION: '604800'
 
 Resources:
+  # IAM Role for API Gateway to write CloudWatch Logs (Account-level, one-time setup)
+  ApiGatewayCloudWatchLogsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+
+  # API Gateway Account (sets CloudWatch role for entire account)
+  ApiGatewayAccount:
+    Type: AWS::ApiGateway::Account
+    Properties:
+      CloudWatchRoleArn: !GetAtt ApiGatewayCloudWatchLogsRole.Arn
+
   # DynamoDB Table for request cache (collections, searches) - FREE TIER
   RequestCacheTable:
     Type: AWS::DynamoDB::Table
@@ -154,7 +178,7 @@ Resources:
       StageName: !Ref EnvironmentName
       Description: BGG Game Selector API Gateway
       Cors:
-        AllowOrigin: "'*'"
+        AllowOrigin: !Sub "'${AllowedOrigins}'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,Bgg-Filter-Player-Count,Bgg-Filter-Min-Duration,Bgg-Filter-Max-Duration,Bgg-Filter-Max-Complexity,Bgg-Filter-Min-Rating,Bgg-Filter-Mechanic,Bgg-Filter-Using-Recommended-Players,Bgg-Include-Expansions,Bgg-Field-Whitelist'"
         AllowMethods: "'GET,OPTIONS'"
       # Throttling to prevent abuse (FREE TIER PROTECTION)
