@@ -19,6 +19,6 @@ class FieldReduction(object):
         return {key: data[key] for key in self.fields if data.get(key)}
 
     @staticmethod
-    def create_field_reduction(headers: EnvironHeaders) -> 'FieldReduction':
+    def create_field_reduction(headers: EnvironHeaders) -> "FieldReduction":
         fields = headers.get(FieldReduction._BggFieldReductionHeader)
         return FieldReduction(fields.split(",") if fields else None)

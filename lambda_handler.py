@@ -3,6 +3,7 @@ AWS Lambda handler for BGG Game Selector API.
 
 Wraps the Flask application for serverless deployment.
 """
+
 import json
 import logging
 from typing import Dict, Any
@@ -27,35 +28,34 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     try:
         # Health check endpoint
-        if event.get('path') == '/health':
+        if event.get("path") == "/health":
             return {
-                'statusCode': 200,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
+                "statusCode": 200,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*",
                 },
-                'body': json.dumps({
-                    'status': 'healthy',
-                    'service': 'bgg-game-selector-api',
-                    'version': '2.0'
-                })
+                "body": json.dumps(
+                    {
+                        "status": "healthy",
+                        "service": "bgg-game-selector-api",
+                        "version": "2.0",
+                    }
+                ),
             }
 
         # Extract request details from API Gateway event
-        http_method = event.get('httpMethod', 'GET')
-        path = event.get('path', '/')
-        headers = event.get('headers', {})
-        query_params = event.get('queryStringParameters') or {}
+        http_method = event.get("httpMethod", "GET")
+        path = event.get("path", "/")
+        headers = event.get("headers", {})
+        query_params = event.get("queryStringParameters") or {}
 
         # Create WSGI-compatible environ for Flask
         from werkzeug.datastructures import EnvironHeaders
         from werkzeug.test import EnvironBuilder
 
         builder = EnvironBuilder(
-            method=http_method,
-            path=path,
-            query_string=query_params,
-            headers=headers
+            method=http_method, path=path, query_string=query_params, headers=headers
         )
         environ = builder.get_environ()
 
@@ -66,15 +66,14 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             except Exception as e:
                 logger.error(f"Error processing request: {e}", exc_info=True)
                 return {
-                    'statusCode': 500,
-                    'headers': {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
+                    "statusCode": 500,
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Origin": "*",
                     },
-                    'body': json.dumps({
-                        'error': 'Internal server error',
-                        'message': str(e)
-                    })
+                    "body": json.dumps(
+                        {"error": "Internal server error", "message": str(e)}
+                    ),
                 }
 
         # Extract response details
@@ -83,24 +82,26 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         response_body = response.get_data(as_text=True)
 
         # Ensure CORS headers
-        response_headers['Access-Control-Allow-Origin'] = '*'
+        response_headers["Access-Control-Allow-Origin"] = "*"
 
         return {
-            'statusCode': status_code,
-            'headers': response_headers,
-            'body': response_body
+            "statusCode": status_code,
+            "headers": response_headers,
+            "body": response_body,
         }
 
     except Exception as e:
         logger.error(f"Unexpected error in Lambda handler: {e}", exc_info=True)
         return {
-            'statusCode': 500,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
+            "statusCode": 500,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
             },
-            'body': json.dumps({
-                'error': 'Internal server error',
-                'message': 'An unexpected error occurred'
-            })
+            "body": json.dumps(
+                {
+                    "error": "Internal server error",
+                    "message": "An unexpected error occurred",
+                }
+            ),
         }

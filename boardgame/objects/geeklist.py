@@ -7,6 +7,7 @@ class GeekListComment(DictObject):
     """
     Object containing details about a comment in a geeklist
     """
+
     def __init__(self, data):
         super(GeekListComment, self).__init__(data)
 
@@ -26,6 +27,7 @@ class GeekList(Thing):
     """
     Object containing information about a geeklist
     """
+
     def __init__(self, data):
         self._comments = []
         self._items = []
@@ -116,6 +118,7 @@ class GeekListItem(DictObject):
     """
     Object containing information about a geeklist item
     """
+
     def __init__(self, data):
         self._comments = []
         super(GeekListItem, self).__init__(data)
@@ -188,6 +191,7 @@ class GeekListObject(Thing):
     """
     Object containing information about a geeklist object (e.g. a game reference)
     """
+
     def __init__(self, data):
         self._items = []
         super(GeekListObject, self).__init__(data)
@@ -197,7 +201,9 @@ class GeekListObject(Thing):
 
     def _format(self, log):
         log.info("id      : {}".format(self.id))
-        log.info(u"name    : {}".format(self.name))  # Name may contain unicode chars, was an issue with python2. TODO:  Shouldn't we fix that everywhere?
+        log.info(
+            "name    : {}".format(self.name)
+        )  # Name may contain unicode chars, was an issue with python2. TODO:  Shouldn't we fix that everywhere?
         log.info("imageid : {}".format(self.imageid))
         log.info("type    : {}".format(self.type))
         log.info("subtype : {}".format(self.subtype))

@@ -16,13 +16,13 @@ class TestDurationFilter(TestCase):
         mock_filter.filter.assert_called_once()
 
     def test_filter_returns_true_when_min_less_than_requirement(self):
-        duration_filter = DurationFilter('5', None)
+        duration_filter = DurationFilter("5", None)
         mock_game = Mock(BoardGame)
         mock_game.min_playing_time = 3
         self.assertTrue(duration_filter.filter(mock_game))
 
     def test_filter_returns_false_when_min_equal_or_greater_than_requirement(self):
-        duration_filter = DurationFilter('5', None)
+        duration_filter = DurationFilter("5", None)
         mock_game = Mock(BoardGame)
         mock_game.min_playing_time = 5
         self.assertFalse(duration_filter.filter(mock_game))
@@ -30,13 +30,13 @@ class TestDurationFilter(TestCase):
         self.assertFalse(duration_filter.filter(mock_game))
 
     def test_filter_returns_true_when_max_more_than_requirement(self):
-        duration_filter = DurationFilter(None, '5')
+        duration_filter = DurationFilter(None, "5")
         mock_game = Mock(BoardGame)
         mock_game.max_playing_time = 6
         self.assertTrue(duration_filter.filter(mock_game))
 
     def test_filter_returns_false_when_max_equal_or_less_than_requirement(self):
-        duration_filter = DurationFilter(None, '5')
+        duration_filter = DurationFilter(None, "5")
         mock_game = Mock(BoardGame)
         mock_game.max_playing_time = 5
         self.assertFalse(duration_filter.filter(mock_game))
