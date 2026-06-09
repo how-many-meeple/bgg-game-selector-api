@@ -12,6 +12,7 @@ from boardgame.legacy_api import BGGClientLegacy
 from boardgame.request_cache import (
     CacheRequestBackendDynamoDB,
     CacheRequestBackendMemory,
+    CacheRequestBackendSQLite,
 )
 from config import Config
 
@@ -31,14 +32,20 @@ class BoardGameFactory(object):
 
     @staticmethod
     def create_request_cache():
-        if Config.CACHE_BACKEND == "dynamodb":
-            return CacheRequestBackendDynamoDB(
-                table_name=Config.DYNAMODB_REQUEST_TABLE,
-                ttl=Config.REQUEST_CACHE_DURATION,
-                region=Config.DYNAMODB_REGION,
-            )
-        else:
-            return CacheRequestBackendMemory(ttl=Config.REQUEST_CACHE_DURATION)
+        match Config.CACHE_BACKEND:
+            case "dynamodb":
+                return CacheRequestBackendDynamoDB(
+                    table_name=Config.DYNAMODB_REQUEST_TABLE,
+                    ttl=Config.REQUEST_CACHE_DURATION,
+                    region=Config.DYNAMODB_REGION,
+                )
+            case "sqlite":
+                return CacheRequestBackendSQLite(
+                    ttl=Config.REQUEST_CACHE_DURATION,
+                    db_path=Config.SQLITE_REQUEST_CACHE_PATH,
+                )
+            case _:
+                return CacheRequestBackendMemory(ttl=Config.REQUEST_CACHE_DURATION)
 
     @staticmethod
     def create_client():
@@ -61,17 +68,18 @@ class BoardGameFactory(object):
 
     @staticmethod
     def create_game_cache() -> GameCache:
-        if Config.CACHE_BACKEND == "dynamodb":
-            return DynamoDBGameCache(
-                table_name=Config.DYNAMODB_GAME_TABLE,
-                cache_length_seconds=Config.GAME_CACHE_DURATION,
-                region=Config.DYNAMODB_REGION,
-            )
-        else:
-            return SQLiteGameCache(
-                cache_length=Config.GAME_CACHE_DURATION,
-                cache_file=Config.SQLITE_CACHE_FILE,
-            )
+        match Config.CACHE_BACKEND:
+            case "dynamodb":
+                return DynamoDBGameCache(
+                    table_name=Config.DYNAMODB_GAME_TABLE,
+                    cache_length_seconds=Config.GAME_CACHE_DURATION,
+                    region=Config.DYNAMODB_REGION,
+                )
+            case _:
+                return SQLiteGameCache(
+                    cache_length=Config.GAME_CACHE_DURATION,
+                    cache_file=Config.SQLITE_GAME_CACHE_PATH,
+                )
 
     @staticmethod
     def create_player_selector(

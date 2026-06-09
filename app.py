@@ -54,3 +54,12 @@ def search_for_game(game_name):
     search = BoardGameFactory.create_search()
 
     return json.dumps([game.data() for game in search.search_for_game(game_name)])
+
+
+@app.route("/health")
+def health():
+    return json.dumps({"status": "ok", "cache_backend": Config.CACHE_BACKEND})
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)

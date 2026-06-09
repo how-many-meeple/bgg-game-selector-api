@@ -313,3 +313,7 @@ build/
 test_cache.db
 short_test_cache.db
 long_test_cache.db
+
+# SQLite cache files
+bgg_request_cache.sqlite*
+bgg_game_cache.sqlite*

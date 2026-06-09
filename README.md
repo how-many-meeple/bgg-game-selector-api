@@ -96,9 +96,9 @@ pip install -r requirements-dev.txt  # For testing
 cp .env.example .env
 # REQUIRED: Add your BGG API token to .env
 # BGG_ACCESS_TOKEN=your_token_here
-# Set CACHE_BACKEND=memory for local development
-# Set DYNAMODB_REQUEST_TABLE=bgg-request-cache
-# Set DYNAMODB_GAME_TABLE=bgg-game-cache
+# Set CACHE_BACKEND=sqlite for local development (persistent cache)
+# Set CACHE_BACKEND=memory for ephemeral cache (lost on restart)
+# Set CACHE_BACKEND=dynamodb for production/AWS
 
 # Run the application
 python app.py
@@ -119,14 +119,16 @@ Configuration is managed through environment variables. Copy `.env.example` to `
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `BGG_ACCESS_TOKEN` | *(required)* | **BGG API access token** - obtain from BGG registration |
-| `CACHE_BACKEND` | `dynamodb` | Cache backend: `dynamodb` (AWS/production) or `memory` (local dev) |
+| `CACHE_BACKEND` | `sqlite` | Cache backend: `dynamodb` (AWS), `sqlite` (local persistent), or `memory` (local temp) |
 | `BGG_TIMEOUT` | `60` | BGG API request timeout (seconds) |
 | `BGG_RETRY_DELAY` | `10` | Delay between BGG API retries (seconds) |
 | `BGG_RETRIES` | `6` | Number of BGG API retry attempts |
 | `REQUEST_CACHE_DURATION` | `86400` | Request cache TTL (seconds, 24 hours) for collections/searches |
 | `GAME_CACHE_DURATION` | `604800` | Game cache TTL (seconds, 7 days) for individual games |
-| `DYNAMODB_REQUEST_TABLE` | `bgg-request-cache` | DynamoDB table for requests |
-| `DYNAMODB_GAME_TABLE` | `bgg-game-cache` | DynamoDB table for game data |
+| `DYNAMODB_REQUEST_TABLE` | `bgg-request-cache` | DynamoDB table for requests (when `CACHE_BACKEND=dynamodb`) |
+| `DYNAMODB_GAME_TABLE` | `bgg-game-cache` | DynamoDB table for game data (when `CACHE_BACKEND=dynamodb`) |
+| `SQLITE_REQUEST_CACHE_PATH` | `bgg_request_cache.sqlite` | SQLite file for requests (when `CACHE_BACKEND=sqlite`) |
+| `SQLITE_GAME_CACHE_PATH` | `bgg_game_cache.sqlite` | SQLite file for game data (when `CACHE_BACKEND=sqlite`) |
 | `FLASK_ENV` | `production` | Flask environment |
 | `ALLOWED_ORIGINS` | `*` | CORS allowed origins (comma-separated). Use `*` for local dev, specific domains for production |
 

@@ -1,10 +1,13 @@
+import os
 import pytest
 import requests_cache
+import tempfile
 from moto import mock_aws
 
 from boardgame.request_cache import (
     CacheRequestBackendDynamoDB,
     CacheRequestBackendMemory,
+    CacheRequestBackendSQLite,
     CacheRequestDynamoDBStorage,
 )
 
@@ -52,3 +55,23 @@ class TestCacheRequestBackendIntegration:
     def test_dynamodb_backend_uses_custom_storage(self):
         backend = CacheRequestBackendDynamoDB("test-table", 3600, "us-east-1")
         assert isinstance(backend.cache.cache.responses, CacheRequestDynamoDBStorage)
+
+    def test_sqlite_backend_has_cached_session(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "test_cache.sqlite")
+            backend = CacheRequestBackendSQLite(3600, db_path)
+            assert hasattr(backend, "cache")
+            assert isinstance(backend.cache, requests_cache.CachedSession)
+            backend.cache.close()
+
+    def test_sqlite_backend_persists_across_instances(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "test_cache.sqlite")
+            backend1 = CacheRequestBackendSQLite(3600, db_path)
+            backend1.cache.get("https://example.com/test")
+            backend1.cache.close()
+
+            backend2 = CacheRequestBackendSQLite(3600, db_path)
+            assert hasattr(backend2, "cache")
+            assert isinstance(backend2.cache, requests_cache.CachedSession)
+            backend2.cache.close()
