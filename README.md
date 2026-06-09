@@ -16,7 +16,7 @@ A cost-optimized REST API for filtering and selecting board games from BoardGame
 
 - **Smart Caching**: Two-tier caching strategy minimizes BGG API calls
   - Request-level cache (24 hours) for collections and geeklists
-  - Game-level cache (7 days) with DynamoDB TTL or SQLite
+  - Game-level cache (7 days) with DynamoDB (production) or memory (local dev)
 - **Flexible Filtering**: Filter games by players, duration, complexity, mechanics, rating, and expansions
 - **Field Selection**: Reduce response payload by selecting only needed fields
 - **Cost Optimized**: Built for AWS free-tier with DynamoDB on-demand pricing and automatic TTL
@@ -35,7 +35,7 @@ A cost-optimized REST API for filtering and selecting board games from BoardGame
 │   (app.py)      │
 └────────┬────────┘
          │
-         ├──> Request Cache (SQLite, 24h TTL)
+         ├──> Request Cache (Memory/DynamoDB, 24h TTL)
          │
          v
 ┌──────────────────┐
@@ -46,7 +46,7 @@ A cost-optimized REST API for filtering and selecting board games from BoardGame
          v
 ┌──────────────────┐
 │   Game Cache     │
-│ DynamoDB/SQLite  │
+│ DynamoDB/Memory  │
 │   (7 day TTL)    │
 └──────────────────┘
 ```
@@ -58,10 +58,10 @@ A cost-optimized REST API for filtering and selecting board games from BoardGame
    - GeekLists (`/geeklist/<id>`)
    - Searches (`/search/<query>`)
 
-2. **Game Cache** (DynamoDB or SQLite): Caches individual game details for 7 days
+2. **Game Cache** (DynamoDB or Memory): Caches individual game details for 7 days
    - Automatically fetches missing games from BGG
    - Uses DynamoDB TTL for zero-cost expiration in production
-   - Falls back to SQLite for local development
+   - Falls back to in-memory cache for local development (lost on restart)
 
 This two-tier approach means:
 - Collection requests return instantly from cache
@@ -119,7 +119,7 @@ Configuration is managed through environment variables. Copy `.env.example` to `
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `BGG_ACCESS_TOKEN` | *(required)* | **BGG API access token** - obtain from BGG registration |
-| `CACHE_BACKEND` | `dynamodb` | Cache backend: `dynamodb` or `sqlite` |
+| `CACHE_BACKEND` | `dynamodb` | Cache backend: `dynamodb` (AWS/production) or `memory` (local dev) |
 | `BGG_TIMEOUT` | `60` | BGG API request timeout (seconds) |
 | `BGG_RETRY_DELAY` | `10` | Delay between BGG API retries (seconds) |
 | `BGG_RETRIES` | `6` | Number of BGG API retry attempts |
@@ -331,11 +331,11 @@ mypy boardgame
 ### Testing with Different Cache Backends
 
 ```bash
-# Test with SQLite
-CACHE_BACKEND=sqlite pytest
+# Test with memory cache (default for local dev)
+CACHE_BACKEND=memory pytest
 
-# Test with DynamoDB (requires moto)
-CACHE_BACKEND=dynamodb pytest tests/boardgame/test_cache_dynamodb.py
+# Test with DynamoDB (requires moto for mocking)
+CACHE_BACKEND=dynamodb pytest tests/boardgame/test_request_cache.py
 ```
 
 ## Deployment
@@ -371,12 +371,30 @@ docker run -p 8080:8080 \
 
 For serverless deployment with even lower costs:
 
-1. Package application with dependencies
-2. Deploy Lambda function with sufficient memory (512MB+)
-3. Configure API Gateway to proxy requests
-4. Set up IAM role with DynamoDB permissions
+```bash
+# Build with Docker
+python3 -m samcli build --use-container --template-file deployment/serverless-template.yaml --profile howmanymeeple
 
-See `deployment/` directory for infrastructure-as-code templates.
+# Deploy with BGG token
+python3 -m samcli deploy \
+  --template-file .aws-sam/build/template.yaml \
+  --stack-name bgg-game-selector-api \
+  --capabilities CAPABILITY_IAM \
+  --region us-east-1 \
+  --profile howmanymeeple \
+  --parameter-overrides \
+    EnvironmentName=production \
+    RateLimitPerMinute=100 \
+    BurstLimit=200 \
+    AllowedOrigins="https://*.howmanymeeple.com" \
+    BggAccessToken="your-bgg-api-token-here" \
+  --resolve-s3 \
+  --no-confirm-changeset
+```
+
+**Important:** Replace `your-bgg-api-token-here` with your actual BGG API token.
+
+See `deployment/` directory for full infrastructure-as-code templates.
 
 ## BGG XML API 2 Reference
 

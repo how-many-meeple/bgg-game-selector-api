@@ -31,6 +31,12 @@ Parameters:
     Default: "https://*.howmanymeeple.com"
     Description: Allowed CORS origins (comma-separated). Use '*' for development, specific domains for production.
 
+  BggAccessToken:
+    Type: String
+    NoEcho: true
+    Default: "PLACEHOLDER_REPLACE_ON_DEPLOY"
+    Description: BoardGameGeek API access token (pass via --parameter-overrides on deploy)
+
 Globals:
   Function:
     Timeout: 30
@@ -42,6 +48,7 @@ Globals:
         DYNAMODB_REQUEST_TABLE: !Ref RequestCacheTable
         DYNAMODB_GAME_TABLE: !Ref GameCacheTable
         FLASK_ENV: production
+        BGG_ACCESS_TOKEN: !Ref BggAccessToken
         BGG_TIMEOUT: '60'
         BGG_RETRIES: '6'
         BGG_RETRY_DELAY: '10'
