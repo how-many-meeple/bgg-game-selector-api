@@ -37,6 +37,11 @@ Parameters:
     Description: Memory for container in MB
     AllowedValues: [512, 1024, 2048, 4096, 8192]
 
+  BggAccessToken:
+    Type: String
+    NoEcho: true
+    Description: BoardGameGeek API access token
+
 Resources:
   # DynamoDB Table for request cache (collections, searches)
   RequestCacheTable:
@@ -176,6 +181,8 @@ Resources:
               Value: !Ref AWS::Region
             - Name: FLASK_ENV
               Value: production
+            - Name: BGG_ACCESS_TOKEN
+              Value: !Ref BggAccessToken
             - Name: BGG_TIMEOUT
               Value: '60'
             - Name: BGG_RETRIES
