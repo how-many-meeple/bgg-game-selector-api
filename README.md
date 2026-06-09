@@ -2,6 +2,16 @@
 
 A cost-optimized REST API for filtering and selecting board games from BoardGameGeek (BGG). Caches game data to minimize API calls and reduce AWS costs. Runs within AWS free-tier limits.
 
+## Prerequisites
+
+**BGG API Access Token Required**: As of December 2024, BoardGameGeek requires authentication for all API endpoints. You must register for API access and obtain an access token before using this application.
+
+**How to obtain access**:
+1. Register at [BoardGameGeek API Documentation](https://boardgamegeek.com/wiki/page/BGG_XML_API2)
+2. Apply for XML API 2 access
+3. Receive your access token
+4. Configure in `.env`: `BGG_ACCESS_TOKEN=your_token_here`
+
 ## Features
 
 - **Smart Caching**: Two-tier caching strategy minimizes BGG API calls
@@ -10,7 +20,7 @@ A cost-optimized REST API for filtering and selecting board games from BoardGame
 - **Flexible Filtering**: Filter games by players, duration, complexity, mechanics, rating, and expansions
 - **Field Selection**: Reduce response payload by selecting only needed fields
 - **Cost Optimized**: Built for AWS free-tier with DynamoDB on-demand pricing and automatic TTL
-- **Modern Stack**: Python 3.11+, Flask, up-to-date BGG API library
+- **Modern Stack**: Python 3.11+, Flask, secure BGG API library
 
 ## Architecture
 
@@ -64,7 +74,8 @@ This two-tier approach means:
 
 - Python 3.11+
 - pip
-- AWS account (for DynamoDB in production)
+- **BGG API access token** (required for all BGG data)
+- AWS account (optional, for DynamoDB in production)
 
 ### Local Development Setup
 
@@ -83,11 +94,15 @@ pip install -r requirements-dev.txt  # For testing
 
 # Configure environment
 cp .env.example .env
-# Edit .env and set CACHE_BACKEND=sqlite for local development
+# REQUIRED: Add your BGG API token to .env
+# BGG_ACCESS_TOKEN=your_token_here
+# Set CACHE_BACKEND=sqlite for local development
 
 # Run the application
 python app.py
 ```
+
+**Note**: The application will start without a BGG token, but all BGG API calls will fail with 401 errors.
 
 ### Production Deployment (AWS)
 
@@ -101,6 +116,7 @@ Configuration is managed through environment variables. Copy `.env.example` to `
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `BGG_ACCESS_TOKEN` | *(required)* | **BGG API access token** - obtain from BGG registration |
 | `CACHE_BACKEND` | `dynamodb` | Cache backend: `dynamodb` or `sqlite` |
 | `BGG_TIMEOUT` | `60` | BGG API request timeout (seconds) |
 | `BGG_RETRY_DELAY` | `10` | Delay between BGG API retries (seconds) |
@@ -375,6 +391,16 @@ This API uses the [BoardGameGeek XML API2](https://boardgamegeek.com/wiki/page/B
 
 ## Troubleshooting
 
+### BGG API Returns 401 Unauthorized
+
+**Cause**: Missing or invalid `BGG_ACCESS_TOKEN`
+
+**Solution**:
+1. Check `.env` file has `BGG_ACCESS_TOKEN=your_token_here`
+2. Verify token is not expired
+3. Confirm BGG API registration is approved
+4. Contact BGG support if token doesn't work
+
 ### "No module named 'boardgamegeek'"
 
 The library name changed. Install the new version:
@@ -382,6 +408,18 @@ The library name changed. Install the new version:
 ```bash
 pip install bgg-api
 ```
+
+### App Starts But No Game Data
+
+**Cause**: Empty or invalid `BGG_ACCESS_TOKEN`
+
+**Expected Behavior**: 
+- App starts successfully
+- Health check endpoint works
+- BGG API calls fail gracefully
+- Logs show authentication errors
+
+**Solution**: Add valid BGG access token to `.env`
 
 ### DynamoDB Access Denied
 
