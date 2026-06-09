@@ -53,7 +53,7 @@ A cost-optimized REST API for filtering and selecting board games from BoardGame
 
 ### Caching Strategy
 
-1. **Request Cache** (SQLite): Caches raw BGG API responses for 24 hours
+1. **Request Cache** (Memory/DynamoDB): Caches raw BGG API responses for 24 hours
    - Collections (`/collection/<user>`)
    - GeekLists (`/geeklist/<id>`)
    - Searches (`/search/<query>`)
@@ -96,7 +96,9 @@ pip install -r requirements-dev.txt  # For testing
 cp .env.example .env
 # REQUIRED: Add your BGG API token to .env
 # BGG_ACCESS_TOKEN=your_token_here
-# Set CACHE_BACKEND=sqlite for local development
+# Set CACHE_BACKEND=memory for local development
+# Set DYNAMODB_REQUEST_TABLE=bgg-request-cache
+# Set DYNAMODB_GAME_TABLE=bgg-game-cache
 
 # Run the application
 python app.py
@@ -123,8 +125,8 @@ Configuration is managed through environment variables. Copy `.env.example` to `
 | `BGG_RETRIES` | `6` | Number of BGG API retry attempts |
 | `ITEM_CACHE_DURATION` | `86400` | Request cache TTL (seconds, 24 hours) |
 | `GAME_CACHE_DURATION` | `604800` | Game cache TTL (seconds, 7 days) |
-| `SQLITE_CACHE_FILE` | `cache.db` | SQLite cache file path |
-| `DYNAMODB_TABLE_NAME` | `bgg-game-cache` | DynamoDB table name |
+| `DYNAMODB_REQUEST_TABLE` | `bgg-request-cache` | DynamoDB table for requests |
+| `DYNAMODB_GAME_TABLE` | `bgg-game-cache` | DynamoDB table for game data |
 | `AWS_REGION` | `us-east-1` | AWS region for DynamoDB |
 | `FLASK_ENV` | `production` | Flask environment |
 
