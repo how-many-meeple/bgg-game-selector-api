@@ -123,12 +123,12 @@ Configuration is managed through environment variables. Copy `.env.example` to `
 | `BGG_TIMEOUT` | `60` | BGG API request timeout (seconds) |
 | `BGG_RETRY_DELAY` | `10` | Delay between BGG API retries (seconds) |
 | `BGG_RETRIES` | `6` | Number of BGG API retry attempts |
-| `ITEM_CACHE_DURATION` | `86400` | Request cache TTL (seconds, 24 hours) |
-| `GAME_CACHE_DURATION` | `604800` | Game cache TTL (seconds, 7 days) |
+| `REQUEST_CACHE_DURATION` | `86400` | Request cache TTL (seconds, 24 hours) for collections/searches |
+| `GAME_CACHE_DURATION` | `604800` | Game cache TTL (seconds, 7 days) for individual games |
 | `DYNAMODB_REQUEST_TABLE` | `bgg-request-cache` | DynamoDB table for requests |
 | `DYNAMODB_GAME_TABLE` | `bgg-game-cache` | DynamoDB table for game data |
-| `AWS_REGION` | `us-east-1` | AWS region for DynamoDB |
 | `FLASK_ENV` | `production` | Flask environment |
+| `ALLOWED_ORIGINS` | `*` | CORS allowed origins (comma-separated). Use `*` for local dev, specific domains for production |
 
 ### DynamoDB Setup
 
@@ -353,8 +353,10 @@ docker build -t bgg-game-selector-api .
 # Run container
 docker run -p 8080:8080 \
   -e CACHE_BACKEND=dynamodb \
-  -e DYNAMODB_TABLE_NAME=bgg-game-cache \
+  -e DYNAMODB_REQUEST_TABLE=bgg-request-cache \
+  -e DYNAMODB_GAME_TABLE=bgg-game-cache \
   -e AWS_REGION=us-east-1 \
+  -e BGG_ACCESS_TOKEN=your_token_here \
   bgg-game-selector-api
 ```
 

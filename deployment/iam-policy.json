@@ -5,31 +5,19 @@
       "Sid": "CloudFormationManagement",
       "Effect": "Allow",
       "Action": [
-        "cloudformation:CreateStack",
-        "cloudformation:UpdateStack",
-        "cloudformation:DeleteStack",
-        "cloudformation:DescribeStacks",
-        "cloudformation:DescribeStackEvents",
-        "cloudformation:DescribeStackResources",
-        "cloudformation:GetTemplate",
-        "cloudformation:ValidateTemplate",
-        "cloudformation:ListStacks",
-        "cloudformation:DescribeChangeSet",
-        "cloudformation:CreateChangeSet",
-        "cloudformation:ExecuteChangeSet",
-        "cloudformation:DeleteChangeSet"
+        "cloudformation:*"
       ],
-      "Resource": "arn:aws:cloudformation:*:*:stack/bgg-game-selector*/*"
+      "Resource": [
+        "arn:aws:cloudformation:*:*:stack/bgg-game-selector*/*",
+        "arn:aws:cloudformation:*:*:stack/aws-sam-cli-managed-default/*",
+        "arn:aws:cloudformation:*:aws:transform/Serverless-2016-10-31"
+      ]
     },
     {
       "Sid": "S3DeploymentBucket",
       "Effect": "Allow",
       "Action": [
-        "s3:CreateBucket",
-        "s3:ListBucket",
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:DeleteObject"
+        "s3:*"
       ],
       "Resource": [
         "arn:aws:s3:::aws-sam-cli-managed-default-samclisourcebucket-*",
@@ -40,14 +28,7 @@
       "Sid": "LambdaManagement",
       "Effect": "Allow",
       "Action": [
-        "lambda:CreateFunction",
-        "lambda:UpdateFunctionCode",
-        "lambda:UpdateFunctionConfiguration",
-        "lambda:DeleteFunction",
-        "lambda:GetFunction",
-        "lambda:TagResource",
-        "lambda:AddPermission",
-        "lambda:RemovePermission"
+        "lambda:*"
       ],
       "Resource": "arn:aws:lambda:*:*:function:production-bgg-api*"
     },
@@ -55,47 +36,33 @@
       "Sid": "APIGatewayManagement",
       "Effect": "Allow",
       "Action": [
-        "apigateway:GET",
-        "apigateway:POST",
-        "apigateway:PUT",
-        "apigateway:PATCH",
-        "apigateway:DELETE"
+        "apigateway:*"
       ],
-      "Resource": "arn:aws:apigateway:*::/restapis*"
+      "Resource": [
+        "arn:aws:apigateway:*::/restapis*",
+        "arn:aws:apigateway:*::/tags*",
+        "arn:aws:apigateway:*::/account"
+      ]
     },
     {
       "Sid": "DynamoDBManagement",
       "Effect": "Allow",
       "Action": [
-        "dynamodb:CreateTable",
-        "dynamodb:UpdateTable",
-        "dynamodb:DeleteTable",
-        "dynamodb:DescribeTable",
-        "dynamodb:UpdateTimeToLive",
-        "dynamodb:TagResource"
+        "dynamodb:*"
       ],
-      "Resource": "arn:aws:dynamodb:*:*:table/production-bgg-game-cache"
+      "Resource": "arn:aws:dynamodb:*:*:table/production-bgg-*"
     },
     {
-      "Sid": "CloudWatchLogsManagement",
+      "Sid": "CloudWatchManagement",
       "Effect": "Allow",
       "Action": [
-        "logs:CreateLogGroup",
-        "logs:DeleteLogGroup",
-        "logs:PutRetentionPolicy",
-        "logs:TagLogGroup"
+        "logs:*",
+        "cloudwatch:*"
       ],
-      "Resource": "arn:aws:logs:*:*:log-group:/aws/lambda/production-bgg-api*"
-    },
-    {
-      "Sid": "CloudWatchAlarmsManagement",
-      "Effect": "Allow",
-      "Action": [
-        "cloudwatch:PutMetricAlarm",
-        "cloudwatch:DeleteAlarms",
-        "cloudwatch:DescribeAlarms"
-      ],
-      "Resource": "arn:aws:cloudwatch:*:*:alarm:production-bgg-*"
+      "Resource": [
+        "arn:aws:logs:*:*:log-group:/aws/lambda/production-bgg-api*",
+        "arn:aws:cloudwatch:*:*:alarm:production-bgg-*"
+      ]
     },
     {
       "Sid": "IAMRoleManagement",
@@ -105,19 +72,21 @@
         "iam:DeleteRole",
         "iam:GetRole",
         "iam:PassRole",
-        "iam:AttachRolePolicy",
-        "iam:DetachRolePolicy",
-        "iam:PutRolePolicy",
-        "iam:DeleteRolePolicy"
+        "iam:*RolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole"
       ],
-      "Resource": "arn:aws:iam::*:role/production-bgg-*"
+      "Resource": [
+        "arn:aws:iam::*:role/production-bgg-*",
+        "arn:aws:iam::*:role/bgg-game-selector-api-*",
+        "arn:aws:iam::*:role/aws-sam-cli-managed-default-*"
+      ]
     },
     {
       "Sid": "IAMPolicyReadOnly",
       "Effect": "Allow",
       "Action": [
-        "iam:GetPolicy",
-        "iam:GetPolicyVersion"
+        "iam:GetPolicy*"
       ],
       "Resource": "*"
     }
