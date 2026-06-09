@@ -1,7 +1,7 @@
 import abc
 from typing import List
 
-from boardgamegeek import BGGClient, CacheBackendSqlite, BGGItemNotFoundError
+from boardgamegeek import BGGClient, BGGItemNotFoundError
 from boardgamegeek.objects.games import BaseGame, BoardGame
 from werkzeug.datastructures import EnvironHeaders
 
@@ -9,6 +9,10 @@ from boardgame import filter_processor
 from boardgame.field_reduction import FieldReduction
 from boardgame.game_cache import GameCache, SQLiteGameCache, DynamoDBGameCache
 from boardgame.legacy_api import BGGClientLegacy
+from boardgame.request_cache import (
+    CacheRequestBackendDynamoDB,
+    CacheRequestBackendMemory,
+)
 from config import Config
 
 
@@ -26,12 +30,21 @@ class BoardGameListNotFoundError(Exception):
 class BoardGameFactory(object):
 
     @staticmethod
+    def create_request_cache():
+        if Config.CACHE_BACKEND == "dynamodb":
+            return CacheRequestBackendDynamoDB(
+                table_name=Config.DYNAMODB_REQUEST_TABLE,
+                ttl=Config.REQUEST_CACHE_DURATION,
+                region=Config.DYNAMODB_REGION,
+            )
+        else:
+            return CacheRequestBackendMemory(ttl=Config.REQUEST_CACHE_DURATION)
+
+    @staticmethod
     def create_client():
         return BGGClient(
             access_token=Config.BGG_ACCESS_TOKEN,
-            cache=CacheBackendSqlite(
-                path=Config.SQLITE_CACHE_FILE, ttl=Config.ITEM_CACHE_DURATION
-            ),
+            cache=BoardGameFactory.create_request_cache(),
             timeout=Config.BGG_TIMEOUT,
             retry_delay=Config.BGG_RETRY_DELAY,
             retries=Config.BGG_RETRIES,
@@ -40,9 +53,7 @@ class BoardGameFactory(object):
     @staticmethod
     def create_legacy_client():
         return BGGClientLegacy(
-            cache=CacheBackendSqlite(
-                path=Config.SQLITE_CACHE_FILE, ttl=Config.ITEM_CACHE_DURATION
-            ),
+            cache=BoardGameFactory.create_request_cache(),
             timeout=Config.BGG_TIMEOUT,
             retry_delay=Config.BGG_RETRY_DELAY,
             retries=Config.BGG_RETRIES,
@@ -50,10 +61,9 @@ class BoardGameFactory(object):
 
     @staticmethod
     def create_game_cache() -> GameCache:
-        """Create game cache based on configuration"""
         if Config.CACHE_BACKEND == "dynamodb":
             return DynamoDBGameCache(
-                table_name=Config.DYNAMODB_TABLE_NAME,
+                table_name=Config.DYNAMODB_GAME_TABLE,
                 cache_length_seconds=Config.GAME_CACHE_DURATION,
                 region=Config.DYNAMODB_REGION,
             )
