@@ -1,47 +1,453 @@
-# bgg-game-selector-api
+# BGG Game Selector API
 
-A JSON rest service for interacting with Board game geek (including geeklists).  The service wraps retrying BGG until data is returned (or timeouts occur) and filters out unwanted games based on headers passed.
+A cost-optimized REST API for filtering and selecting board games from BoardGameGeek (BGG). Caches game data to minimize API calls and reduce AWS costs. Runs within AWS free-tier limits.
 
-## APIs
+## Features
 
-The API suite consists of the following endpoints:
+- **Smart Caching**: Two-tier caching strategy minimizes BGG API calls
+  - Request-level cache (24 hours) for collections and geeklists
+  - Game-level cache (7 days) with DynamoDB TTL or SQLite
+- **Flexible Filtering**: Filter games by players, duration, complexity, mechanics, rating, and expansions
+- **Field Selection**: Reduce response payload by selecting only needed fields
+- **Cost Optimized**: Built for AWS free-tier with DynamoDB on-demand pricing and automatic TTL
+- **Modern Stack**: Python 3.11+, Flask, up-to-date BGG API library
 
-### Retrieve player collection
-`/collection/<username>`
+## Architecture
 
-If the user is not found the service will return a 404.
+```
+┌─────────────┐
+│   Client    │
+└──────┬──────┘
+       │
+       v
+┌─────────────────┐
+│   Flask API     │
+│   (app.py)      │
+└────────┬────────┘
+         │
+         ├──> Request Cache (SQLite, 24h TTL)
+         │
+         v
+┌──────────────────┐
+│ BGG API Client   │
+│  (bgg-api lib)   │
+└────────┬─────────┘
+         │
+         v
+┌──────────────────┐
+│   Game Cache     │
+│ DynamoDB/SQLite  │
+│   (7 day TTL)    │
+└──────────────────┘
+```
 
-### Retrieve geek list
-`/geeklist/<geek_list>`
+### Caching Strategy
 
-If the geeklist is not found or empty the service will return a 404.
+1. **Request Cache** (SQLite): Caches raw BGG API responses for 24 hours
+   - Collections (`/collection/<user>`)
+   - GeekLists (`/geeklist/<id>`)
+   - Searches (`/search/<query>`)
 
-### Search BGG games list
-`/search/<string>`
+2. **Game Cache** (DynamoDB or SQLite): Caches individual game details for 7 days
+   - Automatically fetches missing games from BGG
+   - Uses DynamoDB TTL for zero-cost expiration in production
+   - Falls back to SQLite for local development
 
-## Cache
+This two-tier approach means:
+- Collection requests return instantly from cache
+- New games in existing collections are fetched only once
+- BGG API is touched minimally (typically once per game per week)
 
-### Request Cache
+## Installation
 
-Requests are cached on the Board Game Geek library.  Each API request is cached for a duration of 24 hours. 
+### Requirements
 
-### Game Cache
+- Python 3.11+
+- pip
+- AWS account (for DynamoDB in production)
 
-Each game is cached individually.  When a collection or geeklist is loaded we first check the sqlite db for cached 
-entries, those not found are retrieved and stored in the cache for the next request.  By default we cache games for a
-week.
+### Local Development Setup
 
-## Filter and field Headers
+```bash
+# Clone the repository
+git clone <repository-url>
+cd bgg-game-selector-api
 
-The collection and geek list APIs can be filtered and the response reduced using the following headers.
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-| Header Name | Value Type | Description |
-|----|----|----|
-| Bgg-Filter-Player-Count | Int | Number of players game must support |
-| Bgg-Filter-Min-Duration | Int | Game must last at least this long |
-| Bgg-Filter-Max-Duration | Int | Game must not last longer than this |
-| Bgg-Filter-Using-Recommended-Players | Boolean | Whether or not to use user recommended player counts |
-| Bgg-Include-Expansions | Boolean | Do we include expansions or not in the game list |
-| Bgg-Filter-Max-Complexity | Float | Maximum game difficulty (out of 5) |
-| Bgg-Filter-Mechanic | String | Game mechanic, as defined by BGG, e.g. "[Cooperative Play]" |
-| Bgg-Field-Whitelist | String | Comma separated list of fields to include in the game response list |
+# Install dependencies
+pip install -r requirements.txt
+pip install -r requirements-dev.txt  # For testing
+
+# Configure environment
+cp .env.example .env
+# Edit .env and set CACHE_BACKEND=sqlite for local development
+
+# Run the application
+python app.py
+```
+
+### Production Deployment (AWS)
+
+See [Deployment](#deployment) section below.
+
+## Configuration
+
+Configuration is managed through environment variables. Copy `.env.example` to `.env` and adjust values:
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CACHE_BACKEND` | `dynamodb` | Cache backend: `dynamodb` or `sqlite` |
+| `BGG_TIMEOUT` | `60` | BGG API request timeout (seconds) |
+| `BGG_RETRY_DELAY` | `10` | Delay between BGG API retries (seconds) |
+| `BGG_RETRIES` | `6` | Number of BGG API retry attempts |
+| `ITEM_CACHE_DURATION` | `86400` | Request cache TTL (seconds, 24 hours) |
+| `GAME_CACHE_DURATION` | `604800` | Game cache TTL (seconds, 7 days) |
+| `SQLITE_CACHE_FILE` | `cache.db` | SQLite cache file path |
+| `DYNAMODB_TABLE_NAME` | `bgg-game-cache` | DynamoDB table name |
+| `AWS_REGION` | `us-east-1` | AWS region for DynamoDB |
+| `FLASK_ENV` | `production` | Flask environment |
+
+### DynamoDB Setup
+
+The DynamoDB table is automatically created with proper configuration:
+
+```python
+from boardgame.game_cache import DynamoDBGameCache
+
+# Create table with TTL enabled
+DynamoDBGameCache.create_table(
+    table_name='bgg-game-cache',
+    region='us-east-1'
+)
+```
+
+Or use the AWS CLI:
+
+```bash
+aws dynamodb create-table \
+    --table-name bgg-game-cache \
+    --attribute-definitions AttributeName=id,AttributeType=S \
+    --key-schema AttributeName=id,KeyType=HASH \
+    --billing-mode PAY_PER_REQUEST \
+    --region us-east-1
+
+# Enable TTL
+aws dynamodb update-time-to-live \
+    --table-name bgg-game-cache \
+    --time-to-live-specification "Enabled=true, AttributeName=ttl" \
+    --region us-east-1
+```
+
+## API Endpoints
+
+### Get User Collection
+
+```http
+GET /collection/<username>
+```
+
+Retrieves and filters games from a BoardGameGeek user's collection.
+
+**Path Parameters:**
+- `username` (string): BGG username
+
+**Response:**
+```json
+[
+  {
+    "id": 174430,
+    "name": "Gloomhaven",
+    "yearpublished": 2017,
+    "minplayers": 1,
+    "maxplayers": 4,
+    "playingtime": 120,
+    "rating_average": 8.8,
+    ...
+  }
+]
+```
+
+### Get GeekList
+
+```http
+GET /geeklist/<geek_list>
+```
+
+Retrieves and filters games from a BGG GeekList.
+
+**Path Parameters:**
+- `geek_list` (string): BGG GeekList ID (or comma-separated IDs)
+
+### Search Games
+
+```http
+GET /search/<string>
+```
+
+Search for games by name on BoardGameGeek.
+
+**Path Parameters:**
+- `string` (string): Search query (minimum 3 characters)
+
+**Response:**
+```json
+[
+  {
+    "id": 174430,
+    "name": "Gloomhaven",
+    ...
+  }
+]
+```
+
+## Request Headers (Filtering)
+
+All collection and geeklist endpoints support filtering via HTTP headers:
+
+### Filter Headers
+
+| Header | Type | Description | Example |
+|--------|------|-------------|---------|
+| `Bgg-Filter-Player-Count` | Integer | Number of players | `4` |
+| `Bgg-Filter-Min-Duration` | Integer | Minimum game duration (minutes) | `30` |
+| `Bgg-Filter-Max-Duration` | Integer | Maximum game duration (minutes) | `120` |
+| `Bgg-Filter-Max-Complexity` | Float | Maximum complexity weight (0-5) | `3.5` |
+| `Bgg-Filter-Min-Rating` | Float | Minimum BGG rating | `7.5` |
+| `Bgg-Filter-Mechanic` | String | Required mechanic(s) | `Cooperative Play, Worker Placement` |
+| `Bgg-Filter-Using-Recommended-Players` | Boolean | Use community player count recommendations | `true` |
+| `Bgg-Include-Expansions` | Boolean | Include expansion games | `false` |
+| `Bgg-Field-Whitelist` | String | Comma-separated field names to include | `id,name,rating_average` |
+
+### Example Requests
+
+#### Find 4-player games under 90 minutes
+
+```bash
+curl -H "Bgg-Filter-Player-Count: 4" \
+     -H "Bgg-Filter-Max-Duration: 90" \
+     http://localhost:8080/collection/username
+```
+
+#### Find cooperative games with rating > 7.5
+
+```bash
+curl -H "Bgg-Filter-Mechanic: Cooperative Play" \
+     -H "Bgg-Filter-Min-Rating: 7.5" \
+     http://localhost:8080/collection/username
+```
+
+#### Return only specific fields
+
+```bash
+curl -H "Bgg-Field-Whitelist: id,name,rating_average,playingtime" \
+     http://localhost:8080/collection/username
+```
+
+## Cost Optimization
+
+Cost optimization for AWS free-tier:
+
+### DynamoDB Free Tier
+
+- 25 GB of storage (enough for ~1 million cached games)
+- 25 read capacity units (RCU) and 25 write capacity units (WCU)
+- Pay-per-request pricing eliminates charges when idle
+- Automatic TTL expiration (zero cost)
+
+### Estimated Costs
+
+**Scenario**: API serving 1,000 game lookups per day
+
+- **Cache hit rate**: ~80% (after warm-up)
+- **DynamoDB reads**: ~200/day (cache misses)
+- **DynamoDB writes**: ~200/day (new games)
+- **Free tier**: 2.5M reads, 1M writes per month
+- **Monthly cost**: $0 (within free tier)
+
+**Even at 10,000 requests/day**, costs remain minimal:
+- 2,000 cache misses/day = 60,000/month (still within free tier)
+
+### Cost Reduction Tips
+
+1. **Increase cache duration** for stable game data
+2. **Use request-level caching** for frequently accessed collections
+3. **Enable field whitelisting** at the client to reduce response sizes
+4. **Monitor DynamoDB metrics** in CloudWatch
+
+## Development
+
+### Running Tests
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=boardgame --cov-report=html
+
+# Run specific test file
+pytest tests/boardgame/test_game_cache.py
+
+# Run RightBICEP cache tests
+pytest tests/boardgame/test_game_cache.py tests/boardgame/test_cache_dynamodb.py -v
+```
+
+### Code Quality
+
+```bash
+# Format code
+black .
+
+# Lint code
+flake8 boardgame tests
+
+# Type checking
+mypy boardgame
+```
+
+### Testing with Different Cache Backends
+
+```bash
+# Test with SQLite
+CACHE_BACKEND=sqlite pytest
+
+# Test with DynamoDB (requires moto)
+CACHE_BACKEND=dynamodb pytest tests/boardgame/test_cache_dynamodb.py
+```
+
+## Deployment
+
+**Prerequisites:** Set up IAM permissions first. See [deployment/IAM-SETUP.md](deployment/IAM-SETUP.md) for step-by-step instructions.
+
+Full deployment guide: [deployment/DEPLOYMENT.md](deployment/DEPLOYMENT.md)
+
+### Docker
+
+```bash
+# Build image
+docker build -t bgg-game-selector-api .
+
+# Run container
+docker run -p 8080:8080 \
+  -e CACHE_BACKEND=dynamodb \
+  -e DYNAMODB_TABLE_NAME=bgg-game-cache \
+  -e AWS_REGION=us-east-1 \
+  bgg-game-selector-api
+```
+
+### AWS Elastic Container Service (ECS)
+
+1. Push Docker image to ECR
+2. Create ECS task definition with environment variables
+3. Configure IAM role with DynamoDB permissions
+4. Deploy as ECS service behind Application Load Balancer
+
+### AWS Lambda + API Gateway
+
+For serverless deployment with even lower costs:
+
+1. Package application with dependencies
+2. Deploy Lambda function with sufficient memory (512MB+)
+3. Configure API Gateway to proxy requests
+4. Set up IAM role with DynamoDB permissions
+
+See `deployment/` directory for infrastructure-as-code templates.
+
+## BGG XML API 2 Reference
+
+This API uses the [BoardGameGeek XML API2](https://boardgamegeek.com/wiki/page/BGG_XML_API2):
+
+- **Base URL**: `https://www.boardgamegeek.com/xmlapi2/`
+- **Rate Limit**: ~60 requests per minute
+- **Response Format**: XML (parsed by bgg-api library)
+- **Key Endpoints**: `/thing`, `/collection`, `/search`
+
+### BGG API Behavior
+
+- **202 Response**: Data still processing, retry required
+- **429 Response**: Rate limit exceeded
+- **Retry Logic**: Built into `bgg-api` library with configurable delays
+
+## Troubleshooting
+
+### "No module named 'boardgamegeek'"
+
+The library name changed. Install the new version:
+
+```bash
+pip install bgg-api
+```
+
+### DynamoDB Access Denied
+
+IAM role/user needs these permissions:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan"
+      ],
+      "Resource": "arn:aws:dynamodb:*:*:table/bgg-game-cache"
+    }
+  ]
+}
+```
+
+### BGG API Timeouts
+
+Increase retry settings in `.env`:
+
+```bash
+BGG_TIMEOUT=120
+BGG_RETRIES=10
+```
+
+### High Cache Miss Rate
+
+Check DynamoDB CloudWatch metrics:
+- Increase `GAME_CACHE_DURATION` if game data is stable
+- Verify TTL is properly configured
+- Monitor ConsumedReadCapacityUnits
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Follow the existing code style (Black formatting)
+4. Add tests for new functionality (RightBICEP principles)
+5. Commit changes using conventional commits (`git commit -m 'feat: amazing-feature'`)
+6. Push to branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
+
+### Commit Message Format
+
+Use [Conventional Commits](https://www.conventionalcommits.org/):
+
+- `feat:` - New feature
+- `fix:` - Bug fix
+- `docs:` - Documentation changes
+- `test:` - Adding or updating tests
+- `refactor:` - Code refactoring
+- `chore:` - Maintenance tasks
+
+## License
+
+[Add your license here]
+
+## Acknowledgments
+
+- [BoardGameGeek](https://boardgamegeek.com/) for providing the XML API
+- [bgg-api](https://github.com/SukiCZ/boardgamegeek) library maintainers
+- Original [boardgamegeek2](https://github.com/lcosmin/boardgamegeek) library
