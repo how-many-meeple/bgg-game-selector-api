@@ -19,35 +19,39 @@ class TestMechanicFilter(TestCase):
     def test_filter_returns_true_if_game_has_no_mechanics(self):
         mock_game = Mock(BoardGame)
         mock_game.mechanics = None
-        mechanic_filter = MechanicFilter('[Cooperative Play]')
+        mechanic_filter = MechanicFilter("[Cooperative Play]")
         self.assertTrue(mechanic_filter.filter(mock_game))
 
     def test_filter_returns_false_if_game_matches_some_mechanics(self):
         mock_game = Mock(BoardGame)
         mock_game.mechanics = ["Cooperative Play"]
-        mechanic_filter = MechanicFilter('[Cooperative Play, Card Drafting, Grid Movement]')
+        mechanic_filter = MechanicFilter(
+            "[Cooperative Play, Card Drafting, Grid Movement]"
+        )
         self.assertFalse(mechanic_filter.filter(mock_game))
 
     def test_filter_returns_false_if_game_partially_matches_some_mechanics(self):
         mock_game = Mock(BoardGame)
         mock_game.mechanics = ["STR-01 Cooperative Play"]
-        mechanic_filter = MechanicFilter('[Cooperative Play, Card Drafting, Grid Movement]')
+        mechanic_filter = MechanicFilter(
+            "[Cooperative Play, Card Drafting, Grid Movement]"
+        )
         self.assertFalse(mechanic_filter.filter(mock_game))
 
     def test_filter_returns_true_if_game_doesnt_match_mechanics(self):
         mock_game = Mock(BoardGame)
         mock_game.mechanics = ["Card Drafting"]
-        mechanic_filter = MechanicFilter('[Cooperative Play, Grid Movement]')
+        mechanic_filter = MechanicFilter("[Cooperative Play, Grid Movement]")
         self.assertTrue(mechanic_filter.filter(mock_game))
 
     def test_filter_returns_false_if_game_matches_mechanics_without_spacing(self):
         mock_game = Mock(BoardGame)
         mock_game.mechanics = ["Cooperative Play"]
-        mechanic_filter = MechanicFilter('Cooperative Play,Grid Movement')
+        mechanic_filter = MechanicFilter("Cooperative Play,Grid Movement")
         self.assertFalse(mechanic_filter.filter(mock_game))
 
     def test_filter_returns_false_if_mechanics_list_empty(self):
         mock_game = Mock(BoardGame)
         mock_game.mechanics = ["Cooperative Play"]
-        mechanic_filter = MechanicFilter('[]')
+        mechanic_filter = MechanicFilter("[]")
         self.assertFalse(mechanic_filter.filter(mock_game))

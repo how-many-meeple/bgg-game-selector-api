@@ -18,17 +18,17 @@ class TestExpansionsFilter(TestCase):
     def test_filter_returns_true_if_game_is_an_expansion_and_we_dont_want_them(self):
         mock_game = Mock(BoardGame)
         mock_game.expansion = True
-        expansions_filter = ExpansionsFilter('false')
+        expansions_filter = ExpansionsFilter("false")
         self.assertTrue(expansions_filter.filter(mock_game))
 
     def test_filter_returns_false_if_game_is_not_expansion(self):
         mock_game = Mock(BoardGame)
         mock_game.expansion = False
-        expansions_filter = ExpansionsFilter('false')
+        expansions_filter = ExpansionsFilter("false")
         self.assertFalse(expansions_filter.filter(mock_game))
 
     def test_filter_returns_false_if_game_is_an_expansion_and_we_want_them(self):
         mock_game = Mock(BoardGame)
         mock_game.expansion = True
-        expansions_filter = ExpansionsFilter('true')
+        expansions_filter = ExpansionsFilter("true")
         self.assertFalse(expansions_filter.filter(mock_game))

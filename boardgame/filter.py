@@ -22,7 +22,7 @@ class Filter(metaclass=abc.ABCMeta):
     def __init__(self):
         self._successor = None
 
-    def set_successor(self, successor: 'Filter') -> 'Filter':
+    def set_successor(self, successor: "Filter") -> "Filter":
         self._successor = successor
         return successor
 
@@ -32,15 +32,21 @@ class Filter(metaclass=abc.ABCMeta):
 
     @staticmethod
     def create_filter_chain(headers: EnvironHeaders):
-        expansions = ExpansionsFilter(headers.get(Filter._include_expansions_header_name))
-        players = PlayersFilter(headers.get(Filter._players_count_header_name),
-                                headers.get(Filter._use_recommended_players_count_header_name))
-        duration = DurationFilter(headers.get(Filter._min_duration_header_name),
-                                  headers.get(Filter._max_duration_header_name))
-        complexity = ComplexityFilter(headers.get(
-            Filter._max_complexity_duration_header_name))
-        mechanics = MechanicFilter(headers.get(
-            Filter._mechanics_header_name))
+        expansions = ExpansionsFilter(
+            headers.get(Filter._include_expansions_header_name)
+        )
+        players = PlayersFilter(
+            headers.get(Filter._players_count_header_name),
+            headers.get(Filter._use_recommended_players_count_header_name),
+        )
+        duration = DurationFilter(
+            headers.get(Filter._min_duration_header_name),
+            headers.get(Filter._max_duration_header_name),
+        )
+        complexity = ComplexityFilter(
+            headers.get(Filter._max_complexity_duration_header_name)
+        )
+        mechanics = MechanicFilter(headers.get(Filter._mechanics_header_name))
         rating = RatingFilter(headers.get(Filter._min_rating_header_name))
 
         expansions.set_successor(players)
@@ -53,22 +59,36 @@ class Filter(metaclass=abc.ABCMeta):
 
 
 class PlayersFilter(Filter):
-    def __init__(self, filter_player_count_header: Optional[str], filter_recommended_header: Optional[str]):
+    def __init__(
+        self,
+        filter_player_count_header: Optional[str],
+        filter_recommended_header: Optional[str],
+    ):
         super().__init__()
-        self._players_count = int(filter_player_count_header) if filter_player_count_header else None
+        self._players_count = (
+            int(filter_player_count_header) if filter_player_count_header else None
+        )
         self._use_recommended = True
         if filter_recommended_header and filter_recommended_header.lower() == "false":
             self._use_recommended = False
 
     def filter(self, game: BoardGame) -> bool:
-        def is_matching_request(player_count: Optional[int], min_players: int, max_players: int) -> bool:
-            return player_count and (max_players < player_count or player_count < min_players)
+        def is_matching_request(
+            player_count: Optional[int], min_players: int, max_players: int
+        ) -> bool:
+            return player_count and (
+                max_players < player_count or player_count < min_players
+            )
 
-        matches_request = is_matching_request(self._players_count, game.min_players, game.max_players)
+        matches_request = is_matching_request(
+            self._players_count, game.min_players, game.max_players
+        )
         if self._use_recommended:
             try:
                 min_players, max_players = self.recommended_players(game)
-                matches_request = is_matching_request(self._players_count, min_players, max_players)
+                matches_request = is_matching_request(
+                    self._players_count, min_players, max_players
+                )
             except AttributeError:
                 logging.info(f"no recommendations found for game {game}")
 
@@ -79,8 +99,12 @@ class PlayersFilter(Filter):
         return False
 
     def recommended_players(self, game: BoardGame) -> (int, int):
-        recommended = [players.numeric_player_count for players in game.player_suggestions if
-                       players.best > players.not_recommended or players.recommended > players.not_recommended]
+        recommended = [
+            players.numeric_player_count
+            for players in game.player_suggestions
+            if players.best > players.not_recommended
+            or players.recommended > players.not_recommended
+        ]
         if len(recommended) > 0:
             return min(recommended), max(recommended)
         raise AttributeError
@@ -89,7 +113,9 @@ class PlayersFilter(Filter):
 class ComplexityFilter(Filter):
     def __init__(self, filter_complexity_header: Optional[str]):
         super().__init__()
-        self._complexity = float(filter_complexity_header if filter_complexity_header else 0)
+        self._complexity = float(
+            filter_complexity_header if filter_complexity_header else 0
+        )
 
     def filter(self, game: BoardGame) -> bool:
         weight = float(game.rating_average_weight if game.rating_average_weight else 0)
@@ -122,8 +148,9 @@ class DurationFilter(Filter):
         self._max_time = int(filter_max_time) if filter_max_time else None
 
     def filter(self, game: BoardGame) -> bool:
-        if (self._min_time and game.min_playing_time < self._min_time) \
-                or (self._max_time and game.max_playing_time > self._max_time):
+        if (self._min_time and game.min_playing_time < self._min_time) or (
+            self._max_time and game.max_playing_time > self._max_time
+        ):
             return True
         elif self._successor:
             return self._successor.filter(game)
@@ -145,19 +172,31 @@ class MechanicFilter(Filter):
 
     def __init__(self, filter_mechanic: Optional[str]):
         super().__init__()
-        self._filter_mechanics: List[str] = MechanicFilter.extract(filter_mechanic) if filter_mechanic else []
+        self._filter_mechanics: List[str] = (
+            MechanicFilter.extract(filter_mechanic) if filter_mechanic else []
+        )
 
     def filter(self, game: BoardGame) -> bool:
-        def check_lists_have_matching_content(game_mechanics: List[str], users_requested_mechanics: List[str]) -> bool:
+        def check_lists_have_matching_content(
+            game_mechanics: List[str], users_requested_mechanics: List[str]
+        ) -> bool:
             if not game_mechanics or len(game_mechanics) == 0:
                 return True
-            sanitised_game_mechanics = [self.remove_mechanic_prefix(mechanic) for mechanic in game_mechanics]
-            sanitised_user_mechanics = [self.remove_mechanic_prefix(mechanic) for mechanic in users_requested_mechanics]
-            common_mechanics = set(sanitised_game_mechanics) & set(sanitised_user_mechanics)
+            sanitised_game_mechanics = [
+                self.remove_mechanic_prefix(mechanic) for mechanic in game_mechanics
+            ]
+            sanitised_user_mechanics = [
+                self.remove_mechanic_prefix(mechanic)
+                for mechanic in users_requested_mechanics
+            ]
+            common_mechanics = set(sanitised_game_mechanics) & set(
+                sanitised_user_mechanics
+            )
             return len(common_mechanics) == 0
 
-        if len(self._filter_mechanics) > 0 and check_lists_have_matching_content(game.mechanics,
-                                                                                 self._filter_mechanics):
+        if len(self._filter_mechanics) > 0 and check_lists_have_matching_content(
+            game.mechanics, self._filter_mechanics
+        ):
             return True
         elif self._successor:
             return self._successor.filter(game)
@@ -167,10 +206,14 @@ class MechanicFilter(Filter):
 class RatingFilter(Filter):
     def __init__(self, filter_min_rating_header: Optional[str]):
         super().__init__()
-        self._min_rating = float(filter_min_rating_header) if filter_min_rating_header else None
+        self._min_rating = (
+            float(filter_min_rating_header) if filter_min_rating_header else None
+        )
 
     def filter(self, game: BoardGame) -> bool:
-        if self._min_rating and (not game.rating_average or self._min_rating > game.rating_average):
+        if self._min_rating and (
+            not game.rating_average or self._min_rating > game.rating_average
+        ):
             return True
         elif self._successor:
             return self._successor.filter(game)

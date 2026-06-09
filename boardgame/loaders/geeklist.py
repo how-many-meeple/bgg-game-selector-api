@@ -6,7 +6,9 @@ from boardgame.objects.geeklist import GeekList
 
 
 def parse_date(str_date):
-    return datetime.datetime.strptime(str_date[:-6], '%a, %d %b %Y %H:%M:%S')  # Ignoring the timezone specifier. TODO: This is only valid as long as dates are provided in UTC time zones?
+    return datetime.datetime.strptime(
+        str_date[:-6], "%a, %d %b %Y %H:%M:%S"
+    )  # Ignoring the timezone specifier. TODO: This is only valid as long as dates are provided in UTC time zones?
     # example: Sat, 02 Feb 2019 15:13:54 +0000
 
 
@@ -20,7 +22,7 @@ def add_geeklist_comments_from_xml(geeklist_or_item, xml_root):
             "postdate": parse_date(comment.attrib["postdate"]) or None,
             "editdate": parse_date(comment.attrib["editdate"]) or None,
             "thumbs": int(comment.attrib["thumbs"]),
-            "text": comment.text.strip()
+            "text": comment.text.strip(),
         }
         listcomment = geeklist_or_item.add_comment(data)
         added_comments = True
@@ -30,13 +32,13 @@ def add_geeklist_comments_from_xml(geeklist_or_item, xml_root):
 def create_geeklist_from_xml(xml_root, listid):
     data = {
         "id": listid,
-        "name": xml_subelement_text(xml_root, 'title'),  # need a name for a thing!
-        "postdate": xml_subelement_text(xml_root, 'postdate', parse_date, quiet=True),
-        "editdate": xml_subelement_text(xml_root, 'editdate', parse_date, quiet=True),
-        "thumbs": xml_subelement_text(xml_root, 'thumbs', int),
-        "numitems": xml_subelement_text(xml_root, 'numitems', int),
-        "username": xml_subelement_text(xml_root, 'username'),
-        "description": xml_subelement_text(xml_root, 'description')
+        "name": xml_subelement_text(xml_root, "title"),  # need a name for a thing!
+        "postdate": xml_subelement_text(xml_root, "postdate", parse_date, quiet=True),
+        "editdate": xml_subelement_text(xml_root, "editdate", parse_date, quiet=True),
+        "thumbs": xml_subelement_text(xml_root, "thumbs", int),
+        "numitems": xml_subelement_text(xml_root, "numitems", int),
+        "username": xml_subelement_text(xml_root, "username"),
+        "description": xml_subelement_text(xml_root, "description"),
     }
     list = GeekList(data)
     add_geeklist_comments_from_xml(list, xml_root)
@@ -53,7 +55,7 @@ def add_geeklist_items_from_xml(geeklist, xml_root):
             "postdate": parse_date(item.attrib["postdate"]) or None,
             "editdate": parse_date(item.attrib["editdate"]) or None,
             "thumbs": int(item.attrib["thumbs"]),
-            "body": xml_subelement_text(item, "body")
+            "body": xml_subelement_text(item, "body"),
         }
         listitem = geeklist.add_item(data)
         object_data = {
@@ -61,7 +63,7 @@ def add_geeklist_items_from_xml(geeklist, xml_root):
             "name": item.attrib["objectname"],
             "imageid": item.attrib["imageid"],
             "type": item.attrib["objecttype"],
-            "subtype": item.attrib["subtype"]
+            "subtype": item.attrib["subtype"],
         }
         listitem.set_object(object_data)
         add_geeklist_comments_from_xml(listitem, xml_root)
