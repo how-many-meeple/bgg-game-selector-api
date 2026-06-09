@@ -1,6 +1,6 @@
-pytest==8.2.2
-pytest-cov==5.0.0
-moto[dynamodb]==5.0.9
-black==24.4.2
-flake8==7.1.0
-mypy==1.10.1
+pytest==8.3.4
+pytest-cov==6.0.0
+moto[dynamodb]==5.0.23
+black==24.10.0
+flake8==7.1.1
+mypy==1.13.0
