@@ -7,8 +7,9 @@ from werkzeug.datastructures import EnvironHeaders
 
 from boardgame import filter_processor
 from boardgame.field_reduction import FieldReduction
-from boardgame.game_cache import GameCache
+from boardgame.game_cache import GameCache, SQLiteGameCache, DynamoDBGameCache
 from boardgame.legacy_api import BGGClientLegacy
+from config import Config
 
 
 class BoardGameUserNotFoundError(Exception):
@@ -23,28 +24,38 @@ class BoardGameListNotFoundError(Exception):
 
 
 class BoardGameFactory(object):
-    item_cache_duration = 86400  # one day in seconds
-    game_cache_duration = 604800  # one week in seconds
-    cache_location = "cache.db"
 
     @staticmethod
     def create_client():
         return BGGClient(
-            cache=CacheBackendSqlite(path=BoardGameFactory.cache_location, ttl=BoardGameFactory.item_cache_duration),
-            timeout=60,
-            retry_delay=10, retries=6)
+            access_token=Config.BGG_ACCESS_TOKEN,
+            cache=CacheBackendSqlite(path=Config.SQLITE_CACHE_FILE, ttl=Config.ITEM_CACHE_DURATION),
+            timeout=Config.BGG_TIMEOUT,
+            retry_delay=Config.BGG_RETRY_DELAY,
+            retries=Config.BGG_RETRIES)
 
     @staticmethod
     def create_legacy_client():
         return BGGClientLegacy(
-            cache=CacheBackendSqlite(path=BoardGameFactory.cache_location, ttl=BoardGameFactory.item_cache_duration),
-            timeout=60,
-            retry_delay=10,
-            retries=6)
+            cache=CacheBackendSqlite(path=Config.SQLITE_CACHE_FILE, ttl=Config.ITEM_CACHE_DURATION),
+            timeout=Config.BGG_TIMEOUT,
+            retry_delay=Config.BGG_RETRY_DELAY,
+            retries=Config.BGG_RETRIES)
 
     @staticmethod
-    def create_game_cache():
-        return GameCache(cache_file=BoardGameFactory.cache_location, cache_length=BoardGameFactory.game_cache_duration)
+    def create_game_cache() -> GameCache:
+        """Create game cache based on configuration"""
+        if Config.CACHE_BACKEND == 'dynamodb':
+            return DynamoDBGameCache(
+                table_name=Config.DYNAMODB_TABLE_NAME,
+                cache_length_seconds=Config.GAME_CACHE_DURATION,
+                region=Config.DYNAMODB_REGION
+            )
+        else:
+            return SQLiteGameCache(
+                cache_length=Config.GAME_CACHE_DURATION,
+                cache_file=Config.SQLITE_CACHE_FILE
+            )
 
     @staticmethod
     def create_player_selector(players: str, headers: EnvironHeaders) -> 'BoardGamePlayerSelector':
