@@ -1,4 +1,5 @@
 import json
+import logging
 
 from flask import Flask, request
 from flask_cors import CORS
@@ -6,10 +7,23 @@ from flask_cors import CORS
 from boardgame.board_game import BoardGameFactory, BoardGameUserNotFoundError
 from boardgame.filter import Filter
 from boardgame.filter_processor import FilterProcessor
+from config import Config
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+log = logging.getLogger(__name__)
+
+# Validate configuration
+Config.validate()
 
 application = Flask(__name__)
 app = application  # aliased application for convenience
 CORS(app)
+
+log.info(f"Starting BGG Game Selector API with {Config.CACHE_BACKEND} cache backend")
 
 
 @app.route("/collection/<string:username>")

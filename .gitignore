@@ -300,3 +300,16 @@ typings/
 # End of https://www.gitignore.io/api/node
 
 config/docker
+
+# AWS SAM
+.aws-sam/
+samconfig.toml
+
+# Lambda build artifacts
+build/
+*.zip
+
+# Test cache
+test_cache.db
+short_test_cache.db
+long_test_cache.db

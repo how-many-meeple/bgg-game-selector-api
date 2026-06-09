@@ -1,0 +1,241 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'BGG Game Selector API - Serverless deployment (AWS Free Tier optimized)'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: production
+    Description: Environment name for resource naming
+    AllowedValues:
+      - production
+      - staging
+      - dev
+
+  RateLimitPerMinute:
+    Type: Number
+    Default: 100
+    Description: Maximum API requests per minute per IP (prevents abuse)
+    MinValue: 10
+    MaxValue: 1000
+
+  BurstLimit:
+    Type: Number
+    Default: 200
+    Description: Maximum burst capacity for API Gateway
+    MinValue: 50
+    MaxValue: 5000
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: python3.11
+    Environment:
+      Variables:
+        CACHE_BACKEND: dynamodb
+        DYNAMODB_TABLE_NAME: !Ref GameCacheTable
+        AWS_REGION: !Ref AWS::Region
+        FLASK_ENV: production
+        BGG_TIMEOUT: '60'
+        BGG_RETRIES: '6'
+        BGG_RETRY_DELAY: '10'
+        ITEM_CACHE_DURATION: '86400'
+        GAME_CACHE_DURATION: '604800'
+        SQLITE_CACHE_FILE: '/tmp/cache.db'
+
+Resources:
+  # DynamoDB Table for game cache (FREE TIER: 25GB storage, 25 RCU/WCU)
+  GameCacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${EnvironmentName}-bgg-game-cache
+      BillingMode: PAY_PER_REQUEST  # Only pay for actual usage, no minimum charges
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: false  # Saves costs, enable for production if needed
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Application
+          Value: bgg-game-selector
+        - Key: CostCenter
+          Value: free-tier
+
+  # Lambda Function (FREE TIER: 1M requests/month, 400K GB-seconds compute)
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${EnvironmentName}-bgg-api
+      CodeUri: ../
+      Handler: lambda_handler.handler
+      Description: BGG Game Selector API - Serverless handler
+      Architectures:
+        - x86_64
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameCacheTable
+      Events:
+        # Health check endpoint
+        HealthCheck:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /health
+            Method: GET
+        # Collection endpoint
+        GetCollection:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /collection/{username}
+            Method: GET
+        # GeekList endpoint
+        GetGeekList:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /geeklist/{geek_list}
+            Method: GET
+        # Search endpoint
+        SearchGames:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /search/{string}
+            Method: GET
+      Tags:
+        Environment: !Ref EnvironmentName
+
+  # API Gateway (FREE TIER: 1M API calls/month)
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub ${EnvironmentName}-bgg-api
+      StageName: !Ref EnvironmentName
+      Description: BGG Game Selector API Gateway
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,Bgg-Filter-Player-Count,Bgg-Filter-Min-Duration,Bgg-Filter-Max-Duration,Bgg-Filter-Max-Complexity,Bgg-Filter-Min-Rating,Bgg-Filter-Mechanic,Bgg-Filter-Using-Recommended-Players,Bgg-Include-Expansions,Bgg-Field-Whitelist'"
+        AllowMethods: "'GET,OPTIONS'"
+      # Throttling to prevent abuse (FREE TIER PROTECTION)
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          ThrottlingRateLimit: !Ref RateLimitPerMinute
+          ThrottlingBurstLimit: !Ref BurstLimit
+          LoggingLevel: ERROR
+          DataTraceEnabled: false
+          MetricsEnabled: true
+      # API Key requirement (optional, uncomment for additional security)
+      # Auth:
+      #   ApiKeyRequired: true
+      Tags:
+        Environment: !Ref EnvironmentName
+        CostCenter: free-tier
+
+  # CloudWatch Log Group (FREE TIER: 5GB ingestion, 5GB archive, 7-day retention)
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ApiFunction}
+      RetentionInDays: 7  # Keep costs minimal
+
+  # CloudWatch Alarms for cost monitoring
+  HighRequestAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-bgg-api-high-requests
+      AlarmDescription: Alert when API requests exceed 80% of free tier (800K requests)
+      MetricName: Count
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 86400  # 24 hours
+      EvaluationPeriods: 1
+      Threshold: 800000  # 80% of 1M free tier
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Ref ApiGateway
+      TreatMissingData: notBreaching
+
+  HighDynamoDBReadAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-bgg-dynamodb-high-reads
+      AlarmDescription: Alert on unusually high DynamoDB read units
+      MetricName: ConsumedReadCapacityUnits
+      Namespace: AWS/DynamoDB
+      Statistic: Sum
+      Period: 3600  # 1 hour
+      EvaluationPeriods: 1
+      Threshold: 50000  # Alerts if > 50K reads/hour
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: TableName
+          Value: !Ref GameCacheTable
+      TreatMissingData: notBreaching
+
+  # WAF Web ACL for additional security (Optional, small cost ~$5/month)
+  # Uncomment if you need DDoS protection beyond throttling
+  # WebACL:
+  #   Type: AWS::WAFv2::WebACL
+  #   Properties:
+  #     Name: !Sub ${EnvironmentName}-bgg-api-waf
+  #     Scope: REGIONAL
+  #     DefaultAction:
+  #       Allow: {}
+  #     Rules:
+  #       - Name: RateLimitRule
+  #         Priority: 1
+  #         Statement:
+  #           RateBasedStatement:
+  #             Limit: 2000  # 2000 requests per 5 minutes per IP
+  #             AggregateKeyType: IP
+  #         Action:
+  #           Block: {}
+  #         VisibilityConfig:
+  #           SampledRequestsEnabled: true
+  #           CloudWatchMetricsEnabled: true
+  #           MetricName: RateLimitRule
+  #     VisibilityConfig:
+  #       SampledRequestsEnabled: true
+  #       CloudWatchMetricsEnabled: true
+  #       MetricName: !Sub ${EnvironmentName}-bgg-waf
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}
+    Export:
+      Name: !Sub ${EnvironmentName}-bgg-api-url
+
+  ApiId:
+    Description: API Gateway ID
+    Value: !Ref ApiGateway
+    Export:
+      Name: !Sub ${EnvironmentName}-bgg-api-id
+
+  FunctionArn:
+    Description: Lambda Function ARN
+    Value: !GetAtt ApiFunction.Arn
+    Export:
+      Name: !Sub ${EnvironmentName}-bgg-function-arn
+
+  DynamoDBTableName:
+    Description: DynamoDB table name for game cache
+    Value: !Ref GameCacheTable
+    Export:
+      Name: !Sub ${EnvironmentName}-bgg-cache-table
+
+  EstimatedMonthlyCost:
+    Description: Estimated monthly cost (within free tier limits)
+    Value: "$0.00 (if staying within free tier: <1M requests, <25GB DynamoDB, <400K GB-seconds Lambda)"

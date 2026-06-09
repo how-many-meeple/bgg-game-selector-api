@@ -1,7 +1,10 @@
-FROM python:3.6
-ADD . /app
+FROM python:3.11-slim
 WORKDIR /app
 
-RUN pip install -r requirements.txt
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
 EXPOSE 8080
-CMD ["gunicorn", "-k", "gevent", "-w", "3", "-b", "0.0.0.0:8080", "app"]
+CMD ["gunicorn", "-k", "gevent", "-w", "3", "-b", "0.0.0.0:8080", "app:application"]
