@@ -6,6 +6,7 @@ from boardgamegeek.objects.games import BaseGame, BoardGame
 from werkzeug.datastructures import EnvironHeaders
 
 from boardgame import filter_processor
+from boardgame.backend_factory import backend_selector
 from boardgame.field_reduction import FieldReduction
 from boardgame.game_cache import GameCache, SQLiteGameCache, DynamoDBGameCache
 from boardgame.legacy_api import BGGClientLegacy
@@ -14,6 +15,8 @@ from boardgame.request_cache import (
     CacheRequestBackendMemory,
     CacheRequestBackendSQLite,
 )
+from boardgame.vector_store import VectorStore, SQLiteVectorStore, DynamoDBVectorStore
+from boardgame.vector_sync import VectorSync
 from config import Config
 
 
@@ -31,21 +34,20 @@ class BoardGameListNotFoundError(Exception):
 class BoardGameFactory(object):
 
     @staticmethod
+    @backend_selector(
+        dynamodb=lambda: CacheRequestBackendDynamoDB(
+            table_name=Config.DYNAMODB_REQUEST_TABLE,
+            ttl=Config.REQUEST_CACHE_DURATION,
+            region=Config.DYNAMODB_REGION,
+        ),
+        sqlite=lambda: CacheRequestBackendSQLite(
+            ttl=Config.REQUEST_CACHE_DURATION,
+            db_path=Config.SQLITE_REQUEST_CACHE_PATH,
+        ),
+        default=lambda: CacheRequestBackendMemory(ttl=Config.REQUEST_CACHE_DURATION),
+    )
     def create_request_cache():
-        match Config.CACHE_BACKEND:
-            case "dynamodb":
-                return CacheRequestBackendDynamoDB(
-                    table_name=Config.DYNAMODB_REQUEST_TABLE,
-                    ttl=Config.REQUEST_CACHE_DURATION,
-                    region=Config.DYNAMODB_REGION,
-                )
-            case "sqlite":
-                return CacheRequestBackendSQLite(
-                    ttl=Config.REQUEST_CACHE_DURATION,
-                    db_path=Config.SQLITE_REQUEST_CACHE_PATH,
-                )
-            case _:
-                return CacheRequestBackendMemory(ttl=Config.REQUEST_CACHE_DURATION)
+        pass
 
     @staticmethod
     def create_client():
@@ -67,19 +69,36 @@ class BoardGameFactory(object):
         )
 
     @staticmethod
+    @backend_selector(
+        dynamodb=lambda: DynamoDBGameCache(
+            table_name=Config.DYNAMODB_GAME_TABLE,
+            cache_length_seconds=Config.GAME_CACHE_DURATION,
+            region=Config.DYNAMODB_REGION,
+        ),
+        default=lambda: SQLiteGameCache(
+            cache_length=Config.GAME_CACHE_DURATION,
+            cache_file=Config.SQLITE_GAME_CACHE_PATH,
+        ),
+    )
     def create_game_cache() -> GameCache:
-        match Config.CACHE_BACKEND:
-            case "dynamodb":
-                return DynamoDBGameCache(
-                    table_name=Config.DYNAMODB_GAME_TABLE,
-                    cache_length_seconds=Config.GAME_CACHE_DURATION,
-                    region=Config.DYNAMODB_REGION,
-                )
-            case _:
-                return SQLiteGameCache(
-                    cache_length=Config.GAME_CACHE_DURATION,
-                    cache_file=Config.SQLITE_GAME_CACHE_PATH,
-                )
+        pass
+
+    @staticmethod
+    @backend_selector(
+        dynamodb=lambda: DynamoDBVectorStore(
+            table_name=Config.DYNAMODB_VECTOR_TABLE,
+            region=Config.DYNAMODB_REGION,
+        ),
+        default=lambda: SQLiteVectorStore(db_path=Config.SQLITE_VECTOR_STORE_PATH),
+    )
+    def create_vector_store() -> VectorStore:
+        pass
+
+    @staticmethod
+    def create_vector_sync() -> VectorSync:
+        return VectorSync(
+            BoardGameFactory.create_vector_store(), min_ratings=Config.VECTOR_MIN_RATINGS
+        )
 
     @staticmethod
     def create_player_selector(
@@ -90,6 +109,7 @@ class BoardGameFactory(object):
         return BoardGamePlayerSelector(
             BoardGameFactory.create_client(),
             BoardGameFactory.create_game_cache(),
+            BoardGameFactory.create_vector_sync(),
             field_reduction,
             player_list,
         )
@@ -104,6 +124,7 @@ class BoardGameFactory(object):
             BoardGameFactory.create_client(),
             BoardGameFactory.create_legacy_client(),
             BoardGameFactory.create_game_cache(),
+            BoardGameFactory.create_vector_sync(),
             field_reduction,
             geek_list,
         )
@@ -116,10 +137,15 @@ class BoardGameFactory(object):
 class BoardGameSelector(metaclass=abc.ABCMeta):
 
     def __init__(
-        self, ids: List[str], game_cache: GameCache, field_reduction: FieldReduction
+        self,
+        ids: List[str],
+        game_cache: GameCache,
+        vector_sync: "VectorSync",
+        field_reduction: FieldReduction,
     ):
         self._ids = ids
         self.game_cache = game_cache
+        self.vector_sync = vector_sync
         self._field_reduction = field_reduction
         self.game_cache.timeout_cache()
 
@@ -147,6 +173,7 @@ class BoardGameSelector(metaclass=abc.ABCMeta):
             uncached_games = bgg.game_list(game_list_not_found)
             for game in uncached_games:
                 self.game_cache.save(game)
+                self.vector_sync.sync_game(game)
         return found_cache_games + uncached_games
 
     def __extract_ids_from_games(self, games: List[BoardGame]):
@@ -171,10 +198,11 @@ class BoardGamePlayerSelector(BoardGameSelector):
         self,
         bgg: BGGClient,
         game_cache: GameCache,
+        vector_sync: "VectorSync",
         field_reduction: FieldReduction,
         users: List[str],
     ):
-        super().__init__(users, game_cache, field_reduction)
+        super().__init__(users, game_cache, vector_sync, field_reduction)
         self._bgg = bgg
 
     def get_games_for_id(self, player: str) -> List[BoardGame]:
@@ -198,10 +226,11 @@ class BoardGameGeekListSelector(BoardGameSelector):
         bgg: BGGClient,
         bgg_legacy: BGGClientLegacy,
         game_cache: GameCache,
+        vector_sync: "VectorSync",
         field_reduction: FieldReduction,
         geek_lists: List[str],
     ):
-        super().__init__(geek_lists, game_cache, field_reduction)
+        super().__init__(geek_lists, game_cache, vector_sync, field_reduction)
         self._bgg_legacy = bgg_legacy
         self._bgg = bgg
 
