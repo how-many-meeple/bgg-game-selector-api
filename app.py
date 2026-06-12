@@ -1,3 +1,4 @@
+import functools
 import json
 import logging
 
@@ -11,45 +12,53 @@ from boardgame.recommendation_engine import RecommendationService
 from boardgame.vector_generation import GameVectorGenerator, TasteVectorBuilder
 from config import Config
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 log = logging.getLogger(__name__)
 
-# Validate configuration
 Config.validate()
 
 application = Flask(__name__)
-app = application  # aliased application for convenience
+app = application
 CORS(app)
 
-# Initialize shared services
 game_cache = BoardGameFactory.create_game_cache()
-recommendation_service = RecommendationService(BoardGameFactory.create_vector_store())
+recommendation_service = RecommendationService(
+    BoardGameFactory.create_vector_store(), game_cache
+)
 
 log.info(f"Starting BGG Game Selector API with {Config.CACHE_BACKEND} cache backend")
 
 
+def with_filter(f):
+    """Inject a FilterProcessor built from Bgg-Filter-* request headers."""
+
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        game_filter = FilterProcessor(Filter.create_filter_chain(request.headers))
+        return f(*args, game_filter=game_filter, **kwargs)
+
+    return wrapper
+
+
 @app.route("/collection/<string:username>")
-def show_games_in_collection(username):
+@with_filter
+def show_games_in_collection(username, game_filter):
     selector = BoardGameFactory.create_player_selector(username, request.headers)
     try:
-        game_filter = FilterProcessor(Filter.create_filter_chain(request.headers))
         games = selector.get_games_matching_filter(game_filter)
-
         return json.dumps(games)
     except BoardGameUserNotFoundError as error:
         return error.message, 404
 
 
 @app.route("/geeklist/<geek_list>")
-def show_games_in_list(geek_list):
+@with_filter
+def show_games_in_list(geek_list, game_filter):
     selector = BoardGameFactory.create_list_selector(geek_list, request.headers)
     try:
-        game_filter = FilterProcessor(Filter.create_filter_chain(request.headers))
         games = selector.get_games_matching_filter(game_filter)
-
         return json.dumps(games)
     except BoardGameUserNotFoundError as error:
         return error.message, 404
@@ -58,7 +67,6 @@ def show_games_in_list(geek_list):
 @app.route("/search/<string:game_name>")
 def search_for_game(game_name):
     search = BoardGameFactory.create_search()
-
     return json.dumps([game.data() for game in search.search_for_game(game_name)])
 
 
@@ -68,28 +76,8 @@ def health():
 
 
 @app.route("/recommendations/from-games", methods=["POST"])
-def recommendations_from_games():
-    """
-    Generate game recommendations based on a list of input game IDs.
-
-    Request body:
-        {
-            "game_ids": [1, 2, 3],
-            "limit": 10,  # optional, default 10
-            "exclude_ids": [4, 5],  # optional
-            "player_count": 4,  # optional
-            "min_playtime": 30,  # optional
-            "max_playtime": 120  # optional
-        }
-
-    Response:
-        {
-            "recommendations": [
-                {"game_id": 123, "name": "Game Name", "similarity_score": 0.85},
-                ...
-            ]
-        }
-    """
+@with_filter
+def recommendations_from_games(game_filter):
     try:
         data = request.get_json()
 
@@ -102,11 +90,7 @@ def recommendations_from_games():
 
         limit = data.get("limit", 10)
         exclude_ids = data.get("exclude_ids", [])
-        player_count = data.get("player_count")
-        min_playtime = data.get("min_playtime")
-        max_playtime = data.get("max_playtime")
 
-        # Load game data from cache
         games_data = []
         for game_id in game_ids:
             game = game_cache.load(game_id)
@@ -117,23 +101,17 @@ def recommendations_from_games():
 
         if not games_data:
             return (
-                jsonify(
-                    {"error": "None of the provided game IDs were found in cache"}
-                ),
+                jsonify({"error": "None of the provided game IDs were found in cache"}),
                 404,
             )
 
-        # Build taste vector from games
         taste_vector = TasteVectorBuilder.build(games_data)
 
-        # Get recommendations
-        recommendations = recommendation_service.recommend_from_game_vectors(
-            game_vectors=[taste_vector],  # Already aggregated
+        recommendations = recommendation_service.recommend_from_taste_vector(
+            taste_vector=taste_vector,
             limit=limit,
-            exclude_ids=exclude_ids + game_ids,  # Also exclude input games
-            player_count=player_count,
-            min_playtime=min_playtime,
-            max_playtime=max_playtime,
+            exclude_ids=exclude_ids + game_ids,
+            game_filter=game_filter,
         )
 
         return jsonify(
@@ -151,7 +129,6 @@ def recommendations_from_games():
 
 @app.route("/recommendations/schema", methods=["GET"])
 def recommendations_schema():
-    """Return the vector schema documentation"""
     schema = GameVectorGenerator.get_schema()
     return jsonify(schema)
 

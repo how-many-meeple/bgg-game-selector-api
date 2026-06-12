@@ -3,6 +3,8 @@
 import unittest
 from unittest.mock import Mock
 
+from boardgame.filter import Filter
+from boardgame.filter_processor import FilterProcessor
 from boardgame.recommendation_engine import RecommendationEngine, RecommendationService
 from boardgame.vector_generation import GameVectorGenerator
 from boardgame.vector_store import GameVector, VectorStore
@@ -167,6 +169,199 @@ class TestRecommendationEngine(unittest.TestCase):
         )
 
         self.assertEqual(len(recommendations), 0)
+
+
+class MockGame:
+    """Minimal BoardGame-like object for filter testing"""
+
+    def __init__(
+        self,
+        game_id,
+        min_players=1,
+        max_players=4,
+        min_playing_time=30,
+        max_playing_time=60,
+        rating_average_weight=2.0,
+        rating_average=7.0,
+        expansion=False,
+        mechanics=None,
+        player_suggestions=None,
+    ):
+        self.id = game_id
+        self.min_players = min_players
+        self.max_players = max_players
+        self.min_playing_time = min_playing_time
+        self.max_playing_time = max_playing_time
+        self.rating_average_weight = rating_average_weight
+        self.rating_average = rating_average
+        self.expansion = expansion
+        self.mechanics = mechanics or []
+        self.player_suggestions = player_suggestions or []
+
+
+class MockGameCache:
+    def __init__(self, games):
+        self._games = {g.id: g for g in games}
+
+    def load(self, game_id):
+        return self._games.get(game_id)
+
+    def timeout_cache(self):
+        pass
+
+
+class TestRecommendationEngineFilters(unittest.TestCase):
+
+    def _make_engine(self, games):
+        vector_store = MockVectorStore()
+        for game in games:
+            data = {
+                "id": game.id,
+                "mechanics": game.mechanics,
+                "categories": [],
+                "playing_time": game.max_playing_time,
+                "min_players": game.min_players,
+                "max_players": game.max_players,
+                "rating_average_weight": game.rating_average_weight,
+            }
+            vector_store.save(
+                GameVector(
+                    game_id=game.id,
+                    name=f"Game {game.id}",
+                    vector=GameVectorGenerator.generate(data),
+                )
+            )
+        game_cache = MockGameCache(games)
+        return RecommendationEngine(vector_store, game_cache)
+
+    def _taste(self):
+        return GameVectorGenerator.generate(
+            {"mechanics": ["Hand Management"], "categories": []}
+        )
+
+    def _make_filter(self, **header_values):
+        return FilterProcessor(Filter.create_filter_chain(header_values))
+
+    def test_player_count_filter(self):
+        games = [
+            MockGame(1, min_players=2, max_players=4),
+            MockGame(2, min_players=5, max_players=8),  # won't fit 3 players
+        ]
+        engine = self._make_engine(games)
+        game_filter = self._make_filter(
+            **{
+                "Bgg-Filter-Player-Count": "3",
+                "Bgg-Filter-Using-Recommended-Players": "false",
+            }
+        )
+
+        results = engine.get_similar_games(
+            self._taste(), limit=10, game_filter=game_filter
+        )
+
+        ids = [r.game_id for r in results]
+        self.assertIn(1, ids)
+        self.assertNotIn(2, ids)
+
+    def test_max_duration_filter(self):
+        games = [
+            MockGame(1, max_playing_time=45),
+            MockGame(2, max_playing_time=180),  # too long
+        ]
+        engine = self._make_engine(games)
+        game_filter = self._make_filter(**{"Bgg-Filter-Max-Duration": "60"})
+
+        results = engine.get_similar_games(
+            self._taste(), limit=10, game_filter=game_filter
+        )
+
+        ids = [r.game_id for r in results]
+        self.assertIn(1, ids)
+        self.assertNotIn(2, ids)
+
+    def test_max_complexity_filter(self):
+        games = [
+            MockGame(1, rating_average_weight=2.0),
+            MockGame(2, rating_average_weight=4.5),  # too complex
+        ]
+        engine = self._make_engine(games)
+        game_filter = self._make_filter(**{"Bgg-Filter-Max-Complexity": "3.0"})
+
+        results = engine.get_similar_games(
+            self._taste(), limit=10, game_filter=game_filter
+        )
+
+        ids = [r.game_id for r in results]
+        self.assertIn(1, ids)
+        self.assertNotIn(2, ids)
+
+    def test_min_rating_filter(self):
+        games = [
+            MockGame(1, rating_average=8.0),
+            MockGame(2, rating_average=5.5),  # below threshold
+        ]
+        engine = self._make_engine(games)
+        game_filter = self._make_filter(**{"Bgg-Filter-Min-Rating": "7.0"})
+
+        results = engine.get_similar_games(
+            self._taste(), limit=10, game_filter=game_filter
+        )
+
+        ids = [r.game_id for r in results]
+        self.assertIn(1, ids)
+        self.assertNotIn(2, ids)
+
+    def test_expansions_excluded_by_default(self):
+        games = [
+            MockGame(1, expansion=False),
+            MockGame(2, expansion=True),
+        ]
+        engine = self._make_engine(games)
+        game_filter = self._make_filter()
+
+        results = engine.get_similar_games(
+            self._taste(), limit=10, game_filter=game_filter
+        )
+
+        ids = [r.game_id for r in results]
+        self.assertIn(1, ids)
+        self.assertNotIn(2, ids)
+
+    def test_expansions_included_when_requested(self):
+        games = [
+            MockGame(1, expansion=False),
+            MockGame(2, expansion=True),
+        ]
+        engine = self._make_engine(games)
+        game_filter = self._make_filter(**{"Bgg-Include-Expansions": "true"})
+
+        results = engine.get_similar_games(
+            self._taste(), limit=10, game_filter=game_filter
+        )
+
+        ids = [r.game_id for r in results]
+        self.assertIn(1, ids)
+        self.assertIn(2, ids)
+
+    def test_no_filter_returns_all(self):
+        games = [MockGame(i) for i in range(1, 5)]
+        engine = self._make_engine(games)
+
+        results = engine.get_similar_games(self._taste(), limit=10)
+
+        self.assertEqual(len(results), 4)
+
+    def test_no_game_cache_skips_filters_with_warning(self):
+        vector_store = MockVectorStore()
+        vector_store.save(GameVector(game_id=1, name="G1", vector=self._taste()))
+        engine = RecommendationEngine(vector_store, game_cache=None)
+        game_filter = self._make_filter(**{"Bgg-Filter-Max-Complexity": "1.0"})
+
+        results = engine.get_similar_games(
+            self._taste(), limit=10, game_filter=game_filter
+        )
+
+        self.assertEqual(len(results), 1)
 
 
 class TestRecommendationService(unittest.TestCase):
