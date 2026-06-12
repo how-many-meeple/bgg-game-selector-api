@@ -6,7 +6,7 @@ import logging
 
 import requests
 import validators
-from flask import Flask, Response, request, jsonify, stream_with_context
+from flask import Flask, Response, request, jsonify
 from flask_cors import CORS
 from werkzeug.routing import BaseConverter
 
@@ -83,9 +83,9 @@ def cors_proxy(url: str):
         decoded_url = base64.urlsafe_b64decode(stripped).decode("utf-8")
         if not validators.url(decoded_url):
             return "Not a valid URL to proxy", 400
-        proxied = requests.get(decoded_url, stream=True, params=request.args)
+        proxied = requests.get(decoded_url, params=request.args)
         response = Response(
-            stream_with_context(proxied.iter_content()),
+            proxied.content,
             content_type=proxied.headers["content-type"],
             status=proxied.status_code,
         )

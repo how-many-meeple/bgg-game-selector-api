@@ -1,12 +1,9 @@
-"""
-AWS Lambda handler for BGG Game Selector API.
-
-Wraps the Flask application for serverless deployment.
-"""
-
+import base64
 import json
 import logging
 from typing import Dict, Any
+
+from werkzeug.test import EnvironBuilder
 
 from app import application
 
@@ -50,10 +47,23 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         headers = event.get("headers", {})
         query_params = event.get("queryStringParameters") or {}
 
-        from werkzeug.test import EnvironBuilder
+        raw_body = event.get("body") or ""
+        if event.get("isBase64Encoded"):
+            body = base64.b64decode(raw_body)
+        else:
+            body = raw_body.encode("utf-8") if isinstance(raw_body, str) else raw_body
+
+        content_type = (headers or {}).get(
+            "Content-Type", headers.get("content-type", "")
+        )
 
         builder = EnvironBuilder(
-            method=http_method, path=path, query_string=query_params, headers=headers
+            method=http_method,
+            path=path,
+            query_string=query_params,
+            headers=headers,
+            data=body,
+            content_type=content_type,
         )
         environ = builder.get_environ()
 
@@ -76,15 +86,26 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Extract response details
         status_code = response.status_code
         response_headers = dict(response.headers)
-        response_body = response.get_data(as_text=True)
-
-        # Ensure CORS headers
         response_headers["Access-Control-Allow-Origin"] = "*"
+
+        content_type = response_headers.get("Content-Type", "")
+        is_binary = not (
+            content_type.startswith("text/")
+            or "json" in content_type
+            or "xml" in content_type
+            or "javascript" in content_type
+        )
+
+        if is_binary:
+            body = base64.b64encode(response.get_data()).decode("utf-8")
+        else:
+            body = response.get_data(as_text=True)
 
         return {
             "statusCode": status_code,
             "headers": response_headers,
-            "body": response_body,
+            "body": body,
+            "isBase64Encoded": is_binary,
         }
 
     except Exception as e:
