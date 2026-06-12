@@ -23,6 +23,7 @@ class Config:
     # DynamoDB Configuration
     DYNAMODB_REQUEST_TABLE = os.getenv("DYNAMODB_REQUEST_TABLE", "bgg-request-cache")
     DYNAMODB_GAME_TABLE = os.getenv("DYNAMODB_GAME_TABLE", "bgg-game-cache")
+    DYNAMODB_VECTOR_TABLE = os.getenv("DYNAMODB_VECTOR_TABLE", "bgg-game-vectors")
     DYNAMODB_REGION = os.getenv("AWS_REGION", "us-east-1")
 
     # SQLite Configuration
@@ -32,6 +33,14 @@ class Config:
     SQLITE_GAME_CACHE_PATH = os.getenv(
         "SQLITE_GAME_CACHE_PATH", "bgg_game_cache.sqlite"
     )
+    SQLITE_VECTOR_STORE_PATH = os.getenv(
+        "SQLITE_VECTOR_STORE_PATH", "bgg_game_vectors.sqlite"
+    )
+
+    # Vector Store Configuration
+    VECTOR_MIN_RATINGS = int(
+        os.getenv("VECTOR_MIN_RATINGS", "100")
+    )  # Minimum user ratings to vectorize a game
 
     # Flask Configuration
     FLASK_ENV = os.getenv("FLASK_ENV", "production")

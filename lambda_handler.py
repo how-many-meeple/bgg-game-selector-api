@@ -50,8 +50,6 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         headers = event.get("headers", {})
         query_params = event.get("queryStringParameters") or {}
 
-        # Create WSGI-compatible environ for Flask
-        from werkzeug.datastructures import EnvironHeaders
         from werkzeug.test import EnvironBuilder
 
         builder = EnvironBuilder(
@@ -59,7 +57,6 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         )
         environ = builder.get_environ()
 
-        # Process request through Flask application
         with application.request_context(environ):
             try:
                 response = application.full_dispatch_request()

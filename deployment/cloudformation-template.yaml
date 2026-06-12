@@ -33,7 +33,7 @@ Parameters:
 
   ContainerMemory:
     Type: Number
-    Default: 512
+    Default: 1024
     Description: Memory for container in MB
     AllowedValues: [512, 1024, 2048, 4096, 8192]
 
@@ -88,6 +88,26 @@ Resources:
           Value: bgg-game-selector
         - Key: CacheType
           Value: game-cache
+
+  # DynamoDB Table for game vectors (permanent store — no TTL)
+  GameVectorsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${EnvironmentName}-bgg-game-vectors
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: game_id
+          AttributeType: N
+      KeySchema:
+        - AttributeName: game_id
+          KeyType: HASH
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Application
+          Value: bgg-game-selector
+        - Key: Purpose
+          Value: game-vectors
 
   # ECS Cluster
   ECSCluster:
@@ -150,6 +170,7 @@ Resources:
                 Resource:
                   - !GetAtt RequestCacheTable.Arn
                   - !GetAtt GameCacheTable.Arn
+                  - !GetAtt GameVectorsTable.Arn
 
   # ECS Task Definition
   TaskDefinition:
@@ -177,6 +198,8 @@ Resources:
               Value: !Ref RequestCacheTable
             - Name: DYNAMODB_GAME_TABLE
               Value: !Ref GameCacheTable
+            - Name: DYNAMODB_VECTOR_TABLE
+              Value: !Ref GameVectorsTable
             - Name: AWS_REGION
               Value: !Ref AWS::Region
             - Name: FLASK_ENV
@@ -322,6 +345,12 @@ Outputs:
     Value: !Ref GameCacheTable
     Export:
       Name: !Sub ${EnvironmentName}-bgg-game-cache-table
+
+  DynamoDBVectorTableName:
+    Description: DynamoDB table name for game vectors
+    Value: !Ref GameVectorsTable
+    Export:
+      Name: !Sub ${EnvironmentName}-bgg-game-vectors-table
 
   ECSClusterName:
     Description: ECS cluster name

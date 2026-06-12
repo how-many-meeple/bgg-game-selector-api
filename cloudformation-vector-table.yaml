@@ -1,0 +1,40 @@
+# CloudFormation resource definition for the game vectors DynamoDB table
+# Add this to your SAM template.yaml under the Resources section
+
+GameVectorsTable:
+  Type: AWS::DynamoDB::Table
+  Properties:
+    TableName: bgg-game-vectors
+    BillingMode: PAY_PER_REQUEST  # On-demand pricing
+    AttributeDefinitions:
+      - AttributeName: game_id
+        AttributeType: N  # Number type
+    KeySchema:
+      - AttributeName: game_id
+        KeyType: HASH  # Partition key
+    Tags:
+      - Key: Application
+        Value: bgg-game-selector
+      - Key: Purpose
+        Value: game-vectors
+    # Note: No TTL configuration - this is a permanent store, not a cache
+
+# Environment variable for the Lambda function (add to your function's Environment section):
+# Environment:
+#   Variables:
+#     DYNAMODB_VECTOR_TABLE: !Ref GameVectorsTable
+#     # OR if using a fixed name:
+#     # DYNAMODB_VECTOR_TABLE: bgg-game-vectors
+
+# IAM policy for Lambda to access the vectors table (add to your function's Policies):
+# Policies:
+#   - DynamoDBCrudPolicy:
+#       TableName: !Ref GameVectorsTable
+#   # OR specify actions explicitly:
+#   - Statement:
+#       - Effect: Allow
+#         Action:
+#           - dynamodb:GetItem
+#           - dynamodb:PutItem
+#           - dynamodb:Scan
+#         Resource: !GetAtt GameVectorsTable.Arn
