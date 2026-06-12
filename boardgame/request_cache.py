@@ -102,24 +102,14 @@ class CacheRequestBackendDynamoDB:
         self.ttl = ttl
         self.region = region
 
-        # Create dict-like storage wrapper for DynamoDB
         dynamo_storage = CacheRequestDynamoDBStorage(table_name, region, ttl)
 
-        # BGG library expects .cache to be a requests_cache.CachedSession
-        # Use our DynamoDB dict as the backend storage
         self.cache = requests_cache.CachedSession(
-            backend="memory",  # requests_cache will use memory internally
+            backend="memory",
             expire_after=ttl,
             allowable_codes=(200,),
         )
-        # Override the cache storage with our DynamoDB storage
         self.cache.cache.responses = dynamo_storage
-
-    @property
-    def dynamodb(self):
-        if self._dynamodb is None:
-            self._dynamodb = boto3.resource("dynamodb", region_name=self.region)
-        return self._dynamodb
 
 
 class CacheRequestBackendMemory:

@@ -5,7 +5,7 @@ from boardgamegeek import BGGClient, BGGItemNotFoundError
 from boardgamegeek.objects.games import BaseGame, BoardGame
 from werkzeug.datastructures import EnvironHeaders
 
-from boardgame import filter_processor
+from boardgame.filter_processor import FilterProcessor
 from boardgame.backend_factory import backend_selector
 from boardgame.field_reduction import FieldReduction
 from boardgame.game_cache import GameCache, SQLiteGameCache, DynamoDBGameCache
@@ -97,7 +97,8 @@ class BoardGameFactory(object):
     @staticmethod
     def create_vector_sync() -> VectorSync:
         return VectorSync(
-            BoardGameFactory.create_vector_store(), min_ratings=Config.VECTOR_MIN_RATINGS
+            BoardGameFactory.create_vector_store(),
+            min_ratings=Config.VECTOR_MIN_RATINGS,
         )
 
     @staticmethod
@@ -152,7 +153,7 @@ class BoardGameSelector(metaclass=abc.ABCMeta):
     def __get_games(self, ids: List[str]) -> List[BoardGame]:
         games = []
         for bgg_id in ids:
-            games = games + self.get_games_for_id(bgg_id)
+            games.extend(self.get_games_for_id(bgg_id))
         games.sort(key=lambda base_game: base_game.name)
         return games
 
@@ -161,7 +162,7 @@ class BoardGameSelector(metaclass=abc.ABCMeta):
         for game_id in ids:
             game = self.game_cache.load(game_id)
             if game:
-                games_from_cache = games_from_cache + [game]
+                games_from_cache.append(game)
         return games_from_cache
 
     def get_games_from_bgg(self, bgg: BGGClient, game_ids) -> List[BoardGame]:
@@ -170,16 +171,19 @@ class BoardGameSelector(metaclass=abc.ABCMeta):
         cached_ids = self.__extract_ids_from_games(found_cache_games)
         game_list_not_found = [id for id in game_ids if id not in cached_ids]
         if game_list_not_found:
-            uncached_games = bgg.game_list(game_list_not_found)
-            for game in uncached_games:
-                self.game_cache.save(game)
-                self.vector_sync.sync_game(game)
+            for i in range(0, len(game_list_not_found), 20):
+                batch = game_list_not_found[i : i + 20]
+                batch_games = bgg.game_list(batch)
+                uncached_games.extend(batch_games)
+                for game in batch_games:
+                    self.game_cache.save(game)
+                    self.vector_sync.sync_game(game)
         return found_cache_games + uncached_games
 
     def __extract_ids_from_games(self, games: List[BoardGame]):
         return [game.id for game in games]
 
-    def get_games_matching_filter(self, game_filter: filter_processor) -> List[dict]:
+    def get_games_matching_filter(self, game_filter: FilterProcessor) -> List[dict]:
         filtered_games = [
             item
             for item in self.__get_games(self._ids)
