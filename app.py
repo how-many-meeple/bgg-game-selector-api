@@ -1,9 +1,19 @@
+import base64
+import binascii
 import functools
 import json
 import logging
 
-from flask import Flask, request, jsonify
+import requests
+import validators
+from flask import Flask, Response, request, jsonify, stream_with_context
 from flask_cors import CORS
+from werkzeug.routing import BaseConverter
+
+
+class Base64Converter(BaseConverter):
+    regex = r"[^/].*?"
+
 
 from boardgame.board_game import BoardGameFactory, BoardGameUserNotFoundError
 from boardgame.filter import Filter
@@ -21,6 +31,7 @@ Config.validate()
 
 application = Flask(__name__)
 app = application
+app.url_map.converters["b64"] = Base64Converter
 CORS(app)
 
 game_cache = BoardGameFactory.create_game_cache()
@@ -62,6 +73,27 @@ def show_games_in_list(geek_list, game_filter):
         return json.dumps(games)
     except BoardGameUserNotFoundError as error:
         return error.message, 404
+
+
+@app.route("/cors-proxy/<b64:url>")
+def cors_proxy(url: str):
+    stripped = url[1:]  # strip leading underscore prefix added by HMM frontend
+    stripped += "=" * (-len(stripped) % 4)  # restore base64url padding
+    try:
+        decoded_url = base64.urlsafe_b64decode(stripped).decode("utf-8")
+        if not validators.url(decoded_url):
+            return "Not a valid URL to proxy", 400
+        proxied = requests.get(decoded_url, stream=True, params=request.args)
+        response = Response(
+            stream_with_context(proxied.iter_content()),
+            content_type=proxied.headers["content-type"],
+            status=proxied.status_code,
+        )
+        # BGG image URLs are content-addressed — safe to cache permanently in the browser
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+    except binascii.Error:
+        return "Unable to decode requested proxy item", 400
 
 
 @app.route("/search/<string:game_name>")
