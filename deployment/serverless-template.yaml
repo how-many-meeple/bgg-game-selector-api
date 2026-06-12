@@ -40,13 +40,14 @@ Parameters:
 Globals:
   Function:
     Timeout: 30
-    MemorySize: 512
+    MemorySize: 1024
     Runtime: python3.13
     Environment:
       Variables:
         CACHE_BACKEND: dynamodb
         DYNAMODB_REQUEST_TABLE: !Ref RequestCacheTable
         DYNAMODB_GAME_TABLE: !Ref GameCacheTable
+        DYNAMODB_VECTOR_TABLE: !Ref GameVectorsTable
         FLASK_ENV: production
         BGG_ACCESS_TOKEN: !Ref BggAccessToken
         BGG_TIMEOUT: '60'
@@ -130,6 +131,28 @@ Resources:
         - Key: CostCenter
           Value: free-tier
 
+  # DynamoDB Table for game vectors (permanent store — no TTL)
+  GameVectorsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${EnvironmentName}-bgg-game-vectors
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: game_id
+          AttributeType: N
+      KeySchema:
+        - AttributeName: game_id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: false
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Application
+          Value: bgg-game-selector
+        - Key: Purpose
+          Value: game-vectors
+
   # Lambda Function (FREE TIER: 1M requests/month, 400K GB-seconds compute)
   ApiFunction:
     Type: AWS::Serverless::Function
@@ -145,34 +168,50 @@ Resources:
             TableName: !Ref RequestCacheTable
         - DynamoDBCrudPolicy:
             TableName: !Ref GameCacheTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameVectorsTable
       Events:
-        # Health check endpoint
         HealthCheck:
           Type: Api
           Properties:
             RestApiId: !Ref ApiGateway
             Path: /health
             Method: GET
-        # Collection endpoint
         GetCollection:
           Type: Api
           Properties:
             RestApiId: !Ref ApiGateway
             Path: /collection/{username}
             Method: GET
-        # GeekList endpoint
         GetGeekList:
           Type: Api
           Properties:
             RestApiId: !Ref ApiGateway
             Path: /geeklist/{geek_list}
             Method: GET
-        # Search endpoint
         SearchGames:
           Type: Api
           Properties:
             RestApiId: !Ref ApiGateway
-            Path: /search/{string}
+            Path: /search/{game_name}
+            Method: GET
+        CorsProxy:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /cors-proxy/{url}
+            Method: GET
+        RecommendationsFromGames:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /recommendations/from-games
+            Method: POST
+        RecommendationsSchema:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /recommendations/schema
             Method: GET
       Tags:
         Environment: !Ref EnvironmentName
@@ -187,7 +226,7 @@ Resources:
       Cors:
         AllowOrigin: !Sub "'${AllowedOrigins}'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,Bgg-Filter-Player-Count,Bgg-Filter-Min-Duration,Bgg-Filter-Max-Duration,Bgg-Filter-Max-Complexity,Bgg-Filter-Min-Rating,Bgg-Filter-Mechanic,Bgg-Filter-Using-Recommended-Players,Bgg-Include-Expansions,Bgg-Field-Whitelist'"
-        AllowMethods: "'GET,OPTIONS'"
+        AllowMethods: "'GET,POST,OPTIONS'"
       # Throttling to prevent abuse (FREE TIER PROTECTION)
       MethodSettings:
         - ResourcePath: '/*'
@@ -303,6 +342,12 @@ Outputs:
     Value: !Ref GameCacheTable
     Export:
       Name: !Sub ${EnvironmentName}-bgg-game-cache-table
+
+  DynamoDBVectorTableName:
+    Description: DynamoDB table name for game vectors
+    Value: !Ref GameVectorsTable
+    Export:
+      Name: !Sub ${EnvironmentName}-bgg-game-vectors-table
 
   EstimatedMonthlyCost:
     Description: Estimated monthly cost (within free tier limits)
