@@ -1,4 +1,5 @@
 import os
+import boto3
 import pytest
 import requests_cache
 import tempfile
@@ -12,6 +13,16 @@ from boardgame.request_cache import (
 )
 
 
+def _create_test_table(table_name="test-table", region="us-east-1"):
+    dynamodb = boto3.resource("dynamodb", region_name=region)
+    dynamodb.create_table(
+        TableName=table_name,
+        BillingMode="PAY_PER_REQUEST",
+        AttributeDefinitions=[{"AttributeName": "id", "AttributeType": "S"}],
+        KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],
+    )
+
+
 class TestCacheRequestDynamoDBStorage:
     @mock_aws
     def test_storage_inherits_from_dict_storage(self):
@@ -21,21 +32,40 @@ class TestCacheRequestDynamoDBStorage:
         assert isinstance(storage, DictStorage)
 
     @mock_aws
-    def test_storage_has_serializer_attribute(self):
+    def test_setitem_and_getitem_round_trip(self):
+        _create_test_table()
         storage = CacheRequestDynamoDBStorage("test-table", "us-east-1", 3600)
-        assert hasattr(storage, "serializer")
+        value = {"response_data": "some cached response", "status": 200}
+        storage["my-key"] = value
+        assert storage["my-key"] == value
 
     @mock_aws
-    def test_storage_has_serialize_method(self):
+    def test_getitem_raises_keyerror_for_missing_key(self):
+        _create_test_table()
         storage = CacheRequestDynamoDBStorage("test-table", "us-east-1", 3600)
-        assert hasattr(storage, "serialize")
-        assert callable(storage.serialize)
+        with pytest.raises(KeyError):
+            _ = storage["nonexistent"]
 
     @mock_aws
-    def test_storage_has_deserialize_method(self):
+    def test_contains_returns_true_for_stored_key(self):
+        _create_test_table()
         storage = CacheRequestDynamoDBStorage("test-table", "us-east-1", 3600)
-        assert hasattr(storage, "deserialize")
-        assert callable(storage.deserialize)
+        storage["present"] = {"data": 42}
+        assert "present" in storage
+
+    @mock_aws
+    def test_contains_returns_false_for_missing_key(self):
+        _create_test_table()
+        storage = CacheRequestDynamoDBStorage("test-table", "us-east-1", 3600)
+        assert "absent" not in storage
+
+    @mock_aws
+    def test_delitem_removes_key(self):
+        _create_test_table()
+        storage = CacheRequestDynamoDBStorage("test-table", "us-east-1", 3600)
+        storage["to-delete"] = {"data": "gone"}
+        del storage["to-delete"]
+        assert "to-delete" not in storage
 
 
 class TestCacheRequestBackendIntegration:

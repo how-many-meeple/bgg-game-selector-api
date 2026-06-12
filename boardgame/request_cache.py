@@ -1,4 +1,5 @@
 import logging
+import pickle
 import time
 from typing import Optional
 
@@ -46,7 +47,7 @@ class CacheRequestDynamoDBStorage(DictStorage):
             ttl = item.get("ttl", 0)
             if ttl > 0 and ttl < int(time.time()):
                 raise KeyError(key)
-            return item.get("data")
+            return pickle.loads(item["data"].value)
         except ClientError:
             raise KeyError(key)
 
@@ -54,7 +55,11 @@ class CacheRequestDynamoDBStorage(DictStorage):
         try:
             ttl_timestamp = int(time.time()) + self.ttl
             self.table.put_item(
-                Item={"id": f"request_{key}", "data": value, "ttl": ttl_timestamp}
+                Item={
+                    "id": f"request_{key}",
+                    "data": boto3.dynamodb.types.Binary(pickle.dumps(value)),
+                    "ttl": ttl_timestamp,
+                }
             )
         except ClientError as e:
             logger.error(f"Error setting cache key {key}: {e}")
