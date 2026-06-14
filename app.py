@@ -4,20 +4,26 @@ import functools
 import json
 import logging
 
+import boto3
 import requests
 import validators
 from flask import Flask, Response, request, jsonify
 from flask_cors import CORS
 from werkzeug.routing import BaseConverter
 
-
-class Base64Converter(BaseConverter):
-    regex = r"[^/].*?"
-
-
-from boardgame.board_game import BoardGameFactory, BoardGameUserNotFoundError
+from boardgame.board_game import (
+    BoardGameFactory,
+    BoardGameListNotFoundError,
+    BoardGameUserNotFoundError,
+)
 from boardgame.filter import Filter
 from boardgame.filter_processor import FilterProcessor
+from boardgame.prefetch_status import (
+    NOT_FOUND as PREFETCH_NOT_FOUND,
+    FAILED as PREFETCH_FAILED,
+    PENDING,
+    SourceType,
+)
 from boardgame.recommendation_engine import RecommendationService
 from boardgame.vector_generation import GameVectorGenerator, TasteVectorBuilder
 from config import Config
@@ -29,12 +35,18 @@ log = logging.getLogger(__name__)
 
 Config.validate()
 
+
+class Base64Converter(BaseConverter):
+    regex = r"[^/].*?"
+
+
 application = Flask(__name__)
 app = application
 app.url_map.converters["b64"] = Base64Converter
 CORS(app)
 
 game_cache = BoardGameFactory.create_game_cache()
+prefetch_status_store = BoardGameFactory.create_prefetch_status_store()
 recommendation_service = RecommendationService(
     BoardGameFactory.create_vector_store(), game_cache
 )
@@ -43,8 +55,6 @@ log.info(f"Starting BGG Game Selector API with {Config.CACHE_BACKEND} cache back
 
 
 def with_filter(f):
-    """Inject a FilterProcessor built from Bgg-Filter-* request headers."""
-
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
         game_filter = FilterProcessor(Filter.create_filter_chain(request.headers))
@@ -53,26 +63,54 @@ def with_filter(f):
     return wrapper
 
 
+def check_prefetch_status(source_type: SourceType, source_id: str):
+    """Return an error response if a terminal prefetch status exists, else None."""
+    prefetch = prefetch_status_store.get(source_type, source_id)
+    if not prefetch:
+        return None
+    if prefetch["status"] == PREFETCH_NOT_FOUND:
+        return jsonify({"error": prefetch["reason"] or f"'{source_id}' not found"}), 404
+    if prefetch["status"] == PREFETCH_FAILED:
+        return (
+            jsonify(
+                {
+                    "error": prefetch["reason"]
+                    or f"Previous attempt to load '{source_id}' failed"
+                }
+            ),
+            503,
+        )
+    return None
+
+
 @app.route("/collection/<string:username>")
 @with_filter
 def show_games_in_collection(username, game_filter):
+    error_response = check_prefetch_status(SourceType.COLLECTION, username)
+    if error_response:
+        return error_response
+
     selector = BoardGameFactory.create_player_selector(username, request.headers)
     try:
         games = selector.get_games_matching_filter(game_filter)
         return json.dumps(games)
     except BoardGameUserNotFoundError as error:
-        return error.message, 404
+        return jsonify({"error": error.message}), 404
 
 
 @app.route("/geeklist/<geek_list>")
 @with_filter
 def show_games_in_list(geek_list, game_filter):
+    error_response = check_prefetch_status(SourceType.GEEKLIST, geek_list)
+    if error_response:
+        return error_response
+
     selector = BoardGameFactory.create_list_selector(geek_list, request.headers)
     try:
         games = selector.get_games_matching_filter(game_filter)
         return json.dumps(games)
-    except BoardGameUserNotFoundError as error:
-        return error.message, 404
+    except (BoardGameUserNotFoundError, BoardGameListNotFoundError) as error:
+        return jsonify({"error": error.message}), 404
 
 
 @app.route("/cors-proxy/<b64:url>")
@@ -105,6 +143,77 @@ def search_for_game(game_name):
 @app.route("/health")
 def health():
     return json.dumps({"status": "ok", "cache_backend": Config.CACHE_BACKEND})
+
+
+@app.route("/prefetch", methods=["POST"])
+def prefetch():
+    data = request.get_json()
+    if not data or "source_type" not in data or "source_id" not in data:
+        return (
+            jsonify({"error": "Missing required fields: source_type, source_id"}),
+            400,
+        )
+
+    try:
+        source_type = SourceType(data["source_type"])
+    except ValueError:
+        valid = [s.value for s in SourceType]
+        return jsonify({"error": f"Invalid source_type. Must be one of: {valid}"}), 400
+
+    source_id = str(data["source_id"]).strip()
+    if not source_id:
+        return jsonify({"error": "source_id must not be empty"}), 400
+
+    if not prefetch_status_store.is_queueable(source_type, source_id):
+        status = prefetch_status_store.get(source_type, source_id)
+        current_status = status["status"] if status else PENDING
+        return (
+            jsonify(
+                {
+                    "status": current_status,
+                    "message": "Already queued or recently completed",
+                }
+            ),
+            200,
+        )
+
+    sqs = boto3.client("sqs", region_name=Config.DYNAMODB_REGION)
+    sqs.send_message(
+        QueueUrl=Config.PREFETCH_SQS_URL,
+        MessageBody=json.dumps({"source_type": source_type, "source_id": source_id}),
+    )
+    prefetch_status_store.set(source_type, source_id, PENDING)
+
+    return (
+        jsonify(
+            {"status": PENDING, "source_type": source_type, "source_id": source_id}
+        ),
+        202,
+    )
+
+
+@app.route("/prefetch/status/<source_type>/<source_id>")
+def prefetch_status(source_type: str, source_id: str):
+    try:
+        validated_type = SourceType(source_type)
+    except ValueError:
+        valid = [s.value for s in SourceType]
+        return jsonify({"error": f"Invalid source_type. Must be one of: {valid}"}), 400
+
+    status = prefetch_status_store.get(validated_type, source_id)
+    if not status:
+        return (
+            jsonify(
+                {
+                    "status": "unknown",
+                    "source_type": source_type,
+                    "source_id": source_id,
+                }
+            ),
+            404,
+        )
+
+    return jsonify(status), 200
 
 
 @app.route("/recommendations/from-games", methods=["POST"])

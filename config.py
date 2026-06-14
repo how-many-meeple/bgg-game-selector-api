@@ -24,7 +24,13 @@ class Config:
     DYNAMODB_REQUEST_TABLE = os.getenv("DYNAMODB_REQUEST_TABLE", "bgg-request-cache")
     DYNAMODB_GAME_TABLE = os.getenv("DYNAMODB_GAME_TABLE", "bgg-game-cache")
     DYNAMODB_VECTOR_TABLE = os.getenv("DYNAMODB_VECTOR_TABLE", "bgg-game-vectors")
+    DYNAMODB_PREFETCH_TABLE = os.getenv(
+        "DYNAMODB_PREFETCH_TABLE", "bgg-prefetch-status"
+    )
     DYNAMODB_REGION = os.getenv("AWS_REGION", "us-east-1")
+
+    # Prefetch SQS queue URL
+    PREFETCH_SQS_URL = os.getenv("PREFETCH_SQS_URL", "")
 
     # SQLite Configuration
     SQLITE_REQUEST_CACHE_PATH = os.getenv(
@@ -35,6 +41,9 @@ class Config:
     )
     SQLITE_VECTOR_STORE_PATH = os.getenv(
         "SQLITE_VECTOR_STORE_PATH", "bgg_game_vectors.sqlite"
+    )
+    SQLITE_PREFETCH_STATUS_PATH = os.getenv(
+        "SQLITE_PREFETCH_STATUS_PATH", "bgg_prefetch_status.sqlite"
     )
 
     # Vector Store Configuration
