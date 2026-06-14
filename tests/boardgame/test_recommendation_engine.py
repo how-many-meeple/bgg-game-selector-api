@@ -278,13 +278,13 @@ class TestRecommendationEngineFilters(unittest.TestCase):
         self.assertIn(1, ids)
         self.assertNotIn(2, ids)
 
-    def test_max_complexity_filter(self):
+    def test_complexity_filter(self):
         games = [
-            MockGame(1, rating_average_weight=2.0),
-            MockGame(2, rating_average_weight=4.5),  # too complex
+            MockGame(1, rating_average_weight=2.0),   # within +/-1 of target 3.0
+            MockGame(2, rating_average_weight=4.5),   # outside +/-1 of target 3.0
         ]
         engine = self._make_engine(games)
-        game_filter = self._make_filter(**{"Bgg-Filter-Max-Complexity": "3.0"})
+        game_filter = self._make_filter(**{"Bgg-Filter-Complexity": "3.0"})
 
         results = engine.get_similar_games(
             self._taste(), limit=10, game_filter=game_filter
@@ -354,7 +354,7 @@ class TestRecommendationEngineFilters(unittest.TestCase):
         vector_store = MockVectorStore()
         vector_store.save(GameVector(game_id=1, name="G1", vector=self._taste()))
         engine = RecommendationEngine(vector_store, game_cache=None)
-        game_filter = self._make_filter(**{"Bgg-Filter-Max-Complexity": "1.0"})
+        game_filter = self._make_filter(**{"Bgg-Filter-Complexity": "1.0"})
 
         results = engine.get_similar_games(
             self._taste(), limit=10, game_filter=game_filter

@@ -15,7 +15,7 @@ class Filter(metaclass=abc.ABCMeta):
     _players_count_header_name = "Bgg-Filter-Player-Count"
     _min_duration_header_name = "Bgg-Filter-Min-Duration"
     _max_duration_header_name = "Bgg-Filter-Max-Duration"
-    _max_complexity_duration_header_name = "Bgg-Filter-Max-Complexity"
+    _complexity_header_name = "Bgg-Filter-Complexity"
     _mechanics_header_name = "Bgg-Filter-Mechanic"
     _min_rating_header_name = "Bgg-Filter-Min-Rating"
 
@@ -44,7 +44,7 @@ class Filter(metaclass=abc.ABCMeta):
             headers.get(Filter._max_duration_header_name),
         )
         complexity = ComplexityFilter(
-            headers.get(Filter._max_complexity_duration_header_name)
+            headers.get(Filter._complexity_header_name)
         )
         mechanics = MechanicFilter(headers.get(Filter._mechanics_header_name))
         rating = RatingFilter(headers.get(Filter._min_rating_header_name))
@@ -111,6 +111,8 @@ class PlayersFilter(Filter):
 
 
 class ComplexityFilter(Filter):
+    _range = 1.0
+
     def __init__(self, filter_complexity_header: Optional[str]):
         super().__init__()
         self._complexity = float(
@@ -118,10 +120,13 @@ class ComplexityFilter(Filter):
         )
 
     def filter(self, game: BoardGame) -> bool:
-        weight = float(game.rating_average_weight if game.rating_average_weight else 0)
-        if self._complexity and weight > self._complexity:
-            return True
-        elif self._successor:
+        if self._complexity:
+            if not game.rating_average_weight:
+                return True
+            weight = float(game.rating_average_weight)
+            if abs(weight - self._complexity) > self._range:
+                return True
+        if self._successor:
             return self._successor.filter(game)
         return False
 
