@@ -235,16 +235,22 @@ class TestCollectionEndpointPrefetchIntegration(unittest.TestCase):
             response = self._client.get("/collection/testuser")
         self.assertEqual(response.status_code, 200)
 
-    def test_collection_proceeds_when_prefetch_is_pending(self):
-        # pending = in flight, but collection endpoint should still attempt BGG
+    def test_collection_returns_202_when_prefetch_is_pending(self):
         self._status_store.set(SourceType.COLLECTION, "testuser", PENDING)
-        mock_selector = MagicMock()
-        mock_selector.get_games_matching_filter.return_value = []
-        with patch(
-            "app.BoardGameFactory.create_player_selector", return_value=mock_selector
-        ):
-            response = self._client.get("/collection/testuser")
-        self.assertEqual(response.status_code, 200)
+        response = self._client.get("/collection/testuser")
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(json.loads(response.data)["status"], PENDING)
+
+    def test_collection_returns_202_when_prefetch_is_processing(self):
+        self._status_store.set(SourceType.COLLECTION, "testuser", PROCESSING)
+        response = self._client.get("/collection/testuser")
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(json.loads(response.data)["status"], PROCESSING)
+
+    def test_geeklist_returns_202_when_prefetch_is_pending(self):
+        self._status_store.set(SourceType.GEEKLIST, "99999", PENDING)
+        response = self._client.get("/geeklist/99999")
+        self.assertEqual(response.status_code, 202)
 
     def test_geeklist_returns_404_when_prefetch_is_not_found(self):
         self._status_store.set(
