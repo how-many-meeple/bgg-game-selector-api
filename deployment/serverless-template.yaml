@@ -43,6 +43,7 @@ Globals:
         DYNAMODB_REQUEST_TABLE: !Ref RequestCacheTable
         DYNAMODB_GAME_TABLE: !Ref GameCacheTable
         DYNAMODB_VECTOR_TABLE: !Ref GameVectorsTable
+        DYNAMODB_PREFETCH_TABLE: !Ref PrefetchStatusTable
         FLASK_ENV: production
         BGG_ACCESS_TOKEN: !Ref BggAccessToken
         BGG_TIMEOUT: '60'
@@ -126,6 +127,60 @@ Resources:
         - Key: CostCenter
           Value: free-tier
 
+  # DynamoDB Table for prefetch status (tracks in-flight and terminal prefetch results)
+  PrefetchStatusTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${EnvironmentName}-bgg-prefetch-status
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: false
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Application
+          Value: bgg-game-selector
+        - Key: CacheType
+          Value: prefetch-status
+        - Key: CostCenter
+          Value: free-tier
+
+  # SQS Queue for prefetch jobs (FREE TIER: 1M requests/month)
+  PrefetchQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${EnvironmentName}-bgg-prefetch-queue
+      VisibilityTimeout: 960  # 16 min — must exceed worker Lambda timeout (15 min)
+      MessageRetentionPeriod: 3600
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt PrefetchDeadLetterQueue.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Application
+          Value: bgg-game-selector
+
+  PrefetchDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${EnvironmentName}-bgg-prefetch-dlq
+      MessageRetentionPeriod: 86400
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Application
+          Value: bgg-game-selector
+
   # DynamoDB Table for game vectors (permanent store — no TTL)
   GameVectorsTable:
     Type: AWS::DynamoDB::Table
@@ -158,6 +213,9 @@ Resources:
       Description: BGG Game Selector API - Serverless handler
       Architectures:
         - x86_64
+      Environment:
+        Variables:
+          PREFETCH_SQS_URL: !Ref PrefetchQueue
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref RequestCacheTable
@@ -165,6 +223,10 @@ Resources:
             TableName: !Ref GameCacheTable
         - DynamoDBCrudPolicy:
             TableName: !Ref GameVectorsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PrefetchStatusTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt PrefetchQueue.QueueName
       Events:
         HealthCheck:
           Type: Api
@@ -250,6 +312,64 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /recommendations/schema
             Method: OPTIONS
+        Prefetch:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /prefetch
+            Method: POST
+        PrefetchOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /prefetch
+            Method: OPTIONS
+        PrefetchStatus:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /prefetch/status/{source_type}/{source_id}
+            Method: GET
+        PrefetchStatusOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /prefetch/status/{source_type}/{source_id}
+            Method: OPTIONS
+      Tags:
+        Environment: !Ref EnvironmentName
+
+  # Worker Lambda — triggered by SQS, 15 min timeout to give BGG maximum time to respond
+  PrefetchWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${EnvironmentName}-bgg-prefetch-worker
+      CodeUri: ../
+      Handler: prefetch_worker.handler
+      Description: BGG prefetch worker — fetches BGG data async and warms the cache
+      Timeout: 900
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          PREFETCH_SQS_URL: !Ref PrefetchQueue
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RequestCacheTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameCacheTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameVectorsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PrefetchStatusTable
+        - SQSPollerPolicy:
+            QueueName: !GetAtt PrefetchQueue.QueueName
+      Events:
+        PrefetchQueueTrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt PrefetchQueue.Arn
+            BatchSize: 1
       Tags:
         Environment: !Ref EnvironmentName
 
@@ -386,6 +506,24 @@ Outputs:
     Value: !Ref GameVectorsTable
     Export:
       Name: !Sub ${EnvironmentName}-bgg-game-vectors-table
+
+  DynamoDBPrefetchTableName:
+    Description: DynamoDB table name for prefetch status
+    Value: !Ref PrefetchStatusTable
+    Export:
+      Name: !Sub ${EnvironmentName}-bgg-prefetch-status-table
+
+  PrefetchQueueUrl:
+    Description: SQS queue URL for prefetch jobs
+    Value: !Ref PrefetchQueue
+    Export:
+      Name: !Sub ${EnvironmentName}-bgg-prefetch-queue-url
+
+  PrefetchDeadLetterQueueUrl:
+    Description: SQS dead letter queue URL for failed prefetch jobs
+    Value: !Ref PrefetchDeadLetterQueue
+    Export:
+      Name: !Sub ${EnvironmentName}-bgg-prefetch-dlq-url
 
   EstimatedMonthlyCost:
     Description: Estimated monthly cost (within free tier limits)

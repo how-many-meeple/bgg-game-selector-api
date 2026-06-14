@@ -15,6 +15,11 @@ from boardgame.request_cache import (
     CacheRequestBackendMemory,
     CacheRequestBackendSQLite,
 )
+from boardgame.prefetch_status import (
+    PrefetchStatusStore,
+    SQLitePrefetchStatusStore,
+    DynamoDBPrefetchStatusStore,
+)
 from boardgame.vector_store import VectorStore, SQLiteVectorStore, DynamoDBVectorStore
 from boardgame.vector_sync import VectorSync
 from config import Config
@@ -129,6 +134,19 @@ class BoardGameFactory(object):
             field_reduction,
             geek_list,
         )
+
+    @staticmethod
+    @backend_selector(
+        dynamodb=lambda: DynamoDBPrefetchStatusStore(
+            table_name=Config.DYNAMODB_PREFETCH_TABLE,
+            region=Config.DYNAMODB_REGION,
+        ),
+        default=lambda: SQLitePrefetchStatusStore(
+            db_path=Config.SQLITE_PREFETCH_STATUS_PATH,
+        ),
+    )
+    def create_prefetch_status_store() -> PrefetchStatusStore:
+        pass
 
     @staticmethod
     def create_search() -> "BoardGameSearch":
