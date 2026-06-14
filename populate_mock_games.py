@@ -31,8 +31,8 @@ MOCK_GAMES = [
         "id": 174430,
         "name": "Gloomhaven",
         "year": 2017,
-        "image": "https://cf.geekdo-images.com/sZYp_3BTDGjh2unaZfZmuA__original/img/FyLNR8OjpPXxHJiG1lLLp0C5eOs=/0x0/filters:format(jpeg)/pic2437871.jpg",
-        "thumbnail": "https://cf.geekdo-images.com/sZYp_3BTDGjh2unaZfZmuA__thumb/img/SEq-Z0K4tvKn0A2Thyynd2S2IjM=/fit-in/200x150/filters:strip_icc()/pic2437871.jpg",
+        "image": "https://cf.geekdo-images.com/sZYp_3BTDGjh2unaZfZmuA__original/img/FyLNR8OjpPXxHJiG1lLLp0C5eOs=/0x0/filters:format(jpeg)/pic2437871.jpg",  # noqa: E501
+        "thumbnail": "https://cf.geekdo-images.com/sZYp_3BTDGjh2unaZfZmuA__thumb/img/SEq-Z0K4tvKn0A2Thyynd2S2IjM=/fit-in/200x150/filters:strip_icc()/pic2437871.jpg",  # noqa: E501
         "minplayers": 1,
         "maxplayers": 4,
         "playingtime": 120,
@@ -788,11 +788,11 @@ def populate_mock_games(count: int = None, min_ratings: int = None):
             if should_vectorize:
                 vectorized_count += 1
                 log.info(
-                    f"[{i}/{len(games_to_add)}] Added: {game.name} (id={game.id}, {users_rated} ratings) ✓ vectorized - {reason}"
+                    f"[{i}/{len(games_to_add)}] Added: {game.name} (id={game.id}, {users_rated} ratings) ✓ vectorized - {reason}"  # noqa: E501
                 )
             else:
                 log.info(
-                    f"[{i}/{len(games_to_add)}] Added: {game.name} (id={game.id}, {users_rated} ratings) - skipped: {reason}"
+                    f"[{i}/{len(games_to_add)}] Added: {game.name} (id={game.id}, {users_rated} ratings) - skipped: {reason}"  # noqa: E501
                 )
 
         except Exception as e:

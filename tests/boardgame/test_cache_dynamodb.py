@@ -9,16 +9,15 @@ Tests for DynamoDB GameCache implementation following RightBICEP principles:
 """
 
 import json
-import os
 import time
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 
 import boto3
 from boardgamegeek.objects.games import BoardGame
-from botocore.exceptions import ClientError
 from moto import mock_aws
+
 
 from boardgame.game_cache import DynamoDBGameCache
 

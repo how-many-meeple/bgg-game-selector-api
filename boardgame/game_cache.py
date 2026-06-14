@@ -92,7 +92,7 @@ class SQLiteGameCache(GameCache):
         curs = self._conn.cursor()
         try:
             curs.execute(
-                f"DELETE FROM cached_game WHERE cache_timestamp < DATETIME(CURRENT_TIMESTAMP, '-{self.cache_length} seconds')"
+                f"DELETE FROM cached_game WHERE cache_timestamp < DATETIME(CURRENT_TIMESTAMP, '-{self.cache_length} seconds')"  # noqa: E501
             )
             deleted = curs.rowcount
             self._conn.commit()

@@ -7,7 +7,7 @@ from typing import Optional
 from boardgame.filter_processor import FilterProcessor
 from boardgame.game_cache import GameCache
 from boardgame.vector_generation import VectorSimilarity
-from boardgame.vector_store import GameVector, VectorStore
+from boardgame.vector_store import VectorStore
 
 log = logging.getLogger(__name__)
 

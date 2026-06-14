@@ -1,7 +1,6 @@
 """Integration tests for the recommendation engine"""
 
 import unittest
-from unittest.mock import Mock
 
 from boardgame.filter import Filter
 from boardgame.filter_processor import FilterProcessor

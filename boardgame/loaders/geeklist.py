@@ -24,7 +24,7 @@ def add_geeklist_comments_from_xml(geeklist_or_item, xml_root):
             "thumbs": int(comment.attrib["thumbs"]),
             "text": comment.text.strip(),
         }
-        listcomment = geeklist_or_item.add_comment(data)
+        geeklist_or_item.add_comment(data)
         added_comments = True
     return added_comments
 

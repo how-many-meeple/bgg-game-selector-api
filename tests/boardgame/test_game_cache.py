@@ -12,8 +12,7 @@ import json
 import os
 import time
 import unittest
-from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 
 from boardgamegeek.objects.games import BoardGame
 
