@@ -22,6 +22,7 @@ from boardgame.prefetch_status import (
     NOT_FOUND as PREFETCH_NOT_FOUND,
     FAILED as PREFETCH_FAILED,
     PENDING,
+    PROCESSING,
     SourceType,
 )
 from boardgame.recommendation_engine import RecommendationService
@@ -68,6 +69,8 @@ def check_prefetch_status(source_type: SourceType, source_id: str):
     prefetch = prefetch_status_store.get(source_type, source_id)
     if not prefetch:
         return None
+    if prefetch["status"] in (PENDING, PROCESSING):
+        return jsonify({"status": prefetch["status"], "message": "Prefetch in progress, please retry shortly"}), 202
     if prefetch["status"] == PREFETCH_NOT_FOUND:
         return jsonify({"error": prefetch["reason"] or f"'{source_id}' not found"}), 404
     if prefetch["status"] == PREFETCH_FAILED:
