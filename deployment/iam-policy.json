@@ -30,7 +30,27 @@
       "Action": [
         "lambda:*"
       ],
-      "Resource": "arn:aws:lambda:*:*:function:production-bgg-api*"
+      "Resource": "arn:aws:lambda:*:*:function:production-bgg-*"
+    },
+    {
+      "Sid": "LambdaEventSourceMapping",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:CreateEventSourceMapping",
+        "lambda:DeleteEventSourceMapping",
+        "lambda:GetEventSourceMapping",
+        "lambda:UpdateEventSourceMapping",
+        "lambda:ListEventSourceMappings"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SQSManagement",
+      "Effect": "Allow",
+      "Action": [
+        "sqs:*"
+      ],
+      "Resource": "arn:aws:sqs:*:*:production-bgg-*"
     },
     {
       "Sid": "APIGatewayManagement",
@@ -60,7 +80,7 @@
         "cloudwatch:*"
       ],
       "Resource": [
-        "arn:aws:logs:*:*:log-group:/aws/lambda/production-bgg-api*",
+        "arn:aws:logs:*:*:log-group:/aws/lambda/production-bgg-*",
         "arn:aws:cloudwatch:*:*:alarm:production-bgg-*"
       ]
     },
