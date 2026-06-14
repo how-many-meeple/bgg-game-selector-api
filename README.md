@@ -25,25 +25,26 @@ A cost-optimized REST API for filtering and selecting board games from BoardGame
 ## Architecture
 
 ```
-┌─────────────┐
-│   Client    │
-└──────┬──────┘
-       │
-       v
-┌─────────────────┐
-│   Flask API     │
-│   (app.py)      │
-└────────┬────────┘
-         │
-         ├──> Request Cache (Memory/DynamoDB, 24h TTL)
-         │
-         v
-┌──────────────────┐
-│ BGG API Client   │
-│  (bgg-api lib)   │
-└────────┬─────────┘
-         │
-         v
+┌─────────────┐         POST /prefetch
+│   Client    │ ──────────────────────────────────────────────┐
+└──────┬──────┘                                               │
+       │ GET /collection, /geeklist                           v
+       v                                             ┌─────────────────┐
+┌─────────────────┐   check prefetch status          │   Flask API     │
+│   Flask API     │ ──────────────────────────────>  │  (app.py)       │
+│   (app.py)      │   not_found → 404                │                 │
+└────────┬────────┘   failed    → 503                └────────┬────────┘
+         │            otherwise → proceed                      │ enqueue
+         │                                                     v
+         ├──> Request Cache (Memory/DynamoDB, 24h TTL) ┌─────────────┐
+         │                                              │  SQS Queue  │
+         v                                              └──────┬──────┘
+┌──────────────────┐                                          │
+│ BGG API Client   │  <───────────────────────────────────────┘
+│  (bgg-api lib)   │       PrefetchWorkerFunction
+└────────┬─────────┘       (15-min timeout, writes
+         │                  pending/processing/completed/
+         v                  not_found/failed to DynamoDB)
 ┌──────────────────┐
 │   Game Cache     │
 │ DynamoDB/Memory  │
@@ -63,9 +64,14 @@ A cost-optimized REST API for filtering and selecting board games from BoardGame
    - Uses DynamoDB TTL for zero-cost expiration in production
    - Falls back to in-memory cache for local development (lost on restart)
 
-This two-tier approach means:
-- Collection requests return instantly from cache
-- New games in existing collections are fetched only once
+3. **Prefetch Status** (DynamoDB/SQLite): Tracks async BGG fetch jobs with per-status TTLs
+   - Avoids the API Gateway 29s hard timeout on slow BGG responses
+   - Frontend calls `POST /prefetch` when adding a new source; the worker Lambda fetches in the background
+   - `GET /collection` and `GET /geeklist` check this status and return 404/503 with the original error reason if the prefetch failed
+
+This approach means:
+- Collection requests return instantly from cache after prefetch completes
+- Slow or failing BGG responses never time out the API Gateway
 - BGG API is touched minimally (typically once per game per week)
 
 ## Installation
@@ -127,8 +133,11 @@ Configuration is managed through environment variables. Copy `.env.example` to `
 | `GAME_CACHE_DURATION` | `604800` | Game cache TTL (seconds, 7 days) for individual games |
 | `DYNAMODB_REQUEST_TABLE` | `bgg-request-cache` | DynamoDB table for requests (when `CACHE_BACKEND=dynamodb`) |
 | `DYNAMODB_GAME_TABLE` | `bgg-game-cache` | DynamoDB table for game data (when `CACHE_BACKEND=dynamodb`) |
+| `DYNAMODB_PREFETCH_TABLE` | `bgg-prefetch-status` | DynamoDB table for prefetch job status (when `CACHE_BACKEND=dynamodb`) |
+| `PREFETCH_SQS_URL` | *(required in production)* | SQS queue URL for prefetch jobs |
 | `SQLITE_REQUEST_CACHE_PATH` | `bgg_request_cache.sqlite` | SQLite file for requests (when `CACHE_BACKEND=sqlite`) |
 | `SQLITE_GAME_CACHE_PATH` | `bgg_game_cache.sqlite` | SQLite file for game data (when `CACHE_BACKEND=sqlite`) |
+| `SQLITE_PREFETCH_STATUS_PATH` | `bgg_prefetch_status.sqlite` | SQLite file for prefetch job status (when `CACHE_BACKEND=sqlite`) |
 | `FLASK_ENV` | `production` | Flask environment |
 | `ALLOWED_ORIGINS` | `*` | CORS allowed origins (comma-separated). Use `*` for local dev, specific domains for production |
 
@@ -202,6 +211,51 @@ Retrieves and filters games from a BGG GeekList.
 
 **Path Parameters:**
 - `geek_list` (string): BGG GeekList ID (or comma-separated IDs)
+
+### Queue a Prefetch
+
+```http
+POST /prefetch
+```
+
+Queues an async BGG fetch for a collection or geeklist. Returns immediately with 202 so the frontend can proceed without waiting for BGG. Call this when a user adds a new source.
+
+**Request body:**
+```json
+{
+  "source_type": "collection",
+  "source_id": "username"
+}
+```
+
+`source_type` must be `"collection"` or `"geeklist"`.
+
+**Responses:**
+- `202` — job queued, status is `pending`
+- `200` — already queued or recently completed (returns current status)
+- `400` — missing or invalid fields
+
+### Check Prefetch Status
+
+```http
+GET /prefetch/status/<source_type>/<source_id>
+```
+
+Returns the current prefetch job status. Useful for the frontend to poll while a job is in flight.
+
+**Statuses:**
+
+| Status | Meaning |
+|--------|---------|
+| `pending` | Queued, not yet picked up by worker |
+| `processing` | Worker is actively fetching from BGG |
+| `completed` | Fetch succeeded; collection/geeklist endpoint will serve data |
+| `not_found` | BGG returned no data for this source |
+| `failed` | Unexpected error during fetch; retryable |
+
+**Responses:**
+- `200` — status record found
+- `404` — no prefetch has been run for this source
 
 ### Search Games
 
@@ -323,11 +377,8 @@ pytest tests/boardgame/test_game_cache.py tests/boardgame/test_cache_dynamodb.py
 # Format code
 black .
 
-# Lint code
-flake8 boardgame tests
-
-# Type checking
-mypy boardgame
+# Lint
+python3 -m flake8 .
 ```
 
 ### Testing with Different Cache Backends

@@ -1,7 +1,6 @@
 import logging
 import pickle
 import time
-from typing import Optional
 
 import boto3
 import requests_cache

@@ -318,13 +318,7 @@ aws cloudwatch get-metric-statistics \
 
 ### Lambda Function Timing Out
 
-Increase timeout in `serverless-template.yaml`:
-
-```yaml
-Globals:
-  Function:
-    Timeout: 60  # Increase from 30 to 60 seconds
-```
+The API function has a 30s timeout (matching the API Gateway hard limit). BGG fetches that may be slow should go through `POST /prefetch` instead — the prefetch worker has a 15-minute timeout and runs outside the API Gateway request path.
 
 ### DynamoDB Throttling
 
