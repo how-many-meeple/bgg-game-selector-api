@@ -290,7 +290,7 @@ All collection and geeklist endpoints support filtering via HTTP headers:
 | `Bgg-Filter-Player-Count` | Integer | Number of players | `4` |
 | `Bgg-Filter-Min-Duration` | Integer | Minimum game duration (minutes) | `30` |
 | `Bgg-Filter-Max-Duration` | Integer | Maximum game duration (minutes) | `120` |
-| `Bgg-Filter-Max-Complexity` | Float | Maximum complexity weight (0-5) | `3.5` |
+| `Bgg-Filter-Complexity` | Float | Target complexity weight (1-5); includes games within ±1 of the value | `3.0` |
 | `Bgg-Filter-Min-Rating` | Float | Minimum BGG rating | `7.5` |
 | `Bgg-Filter-Mechanic` | String | Required mechanic(s) | `Cooperative Play, Worker Placement` |
 | `Bgg-Filter-Using-Recommended-Players` | Boolean | Use community player count recommendations | `true` |
