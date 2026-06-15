@@ -67,6 +67,7 @@ class BoardGameFactory(object):
     @staticmethod
     def create_legacy_client():
         return BGGClientLegacy(
+            access_token=Config.BGG_ACCESS_TOKEN,
             cache=BoardGameFactory.create_request_cache(),
             timeout=Config.BGG_TIMEOUT,
             retry_delay=Config.BGG_RETRY_DELAY,

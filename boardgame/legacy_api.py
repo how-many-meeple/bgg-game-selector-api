@@ -12,12 +12,13 @@ from boardgame.loaders.geeklist import (
 
 log = logging.getLogger("boardgamegeek.legacy_api")
 
-API_ENDPOINT = "http://www.boardgamegeek.com/xmlapi"
+API_ENDPOINT = "https://boardgamegeek.com/xmlapi"
 
 
 class BGGClientLegacy(BGGCommon):
     def __init__(
         self,
+        access_token=None,
         cache=CacheBackendMemory(ttl=3600),
         timeout=15,
         retries=3,
@@ -33,6 +34,7 @@ class BGGClientLegacy(BGGCommon):
             retries=retries,
             retry_delay=retry_delay,
             requests_per_minute=requests_per_minute,
+            access_token=access_token,
         )
         self._search_api_url = None
         self._thing_api_url = None
@@ -60,6 +62,7 @@ class BGGClientLegacy(BGGCommon):
             timeout=self._timeout,
             retries=self._retries,
             retry_delay=self._retry_delay,
+            headers=self._get_auth_headers(),
         )
 
         list = create_geeklist_from_xml(xml_root, listid)

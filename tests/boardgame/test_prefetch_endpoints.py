@@ -7,6 +7,8 @@ import os
 import unittest
 from unittest.mock import MagicMock, patch
 
+from boardgamegeek.exceptions import BGGApiError
+
 from boardgame.prefetch_status import (
     COMPLETED,
     FAILED,
@@ -263,6 +265,24 @@ class TestCollectionEndpointPrefetchIntegration(unittest.TestCase):
         self._status_store.set(SourceType.GEEKLIST, "99999", FAILED, reason="Timeout")
         response = self._client.get("/geeklist/99999")
         self.assertEqual(response.status_code, 503)
+
+    def test_collection_returns_503_with_rate_limit_message_when_bgg_rate_limits(self):
+        mock_selector = MagicMock()
+        mock_selector.get_games_matching_filter.side_effect = BGGApiError("couldn't fetch data")
+        with patch("app.BoardGameFactory.create_player_selector", return_value=mock_selector):
+            response = self._client.get("/collection/testuser")
+        self.assertEqual(response.status_code, 503)
+        data = json.loads(response.data)
+        self.assertIn("slow down", data["error"])
+
+    def test_geeklist_returns_503_with_rate_limit_message_when_bgg_rate_limits(self):
+        mock_selector = MagicMock()
+        mock_selector.get_games_matching_filter.side_effect = BGGApiError("couldn't fetch data")
+        with patch("app.BoardGameFactory.create_list_selector", return_value=mock_selector):
+            response = self._client.get("/geeklist/99999")
+        self.assertEqual(response.status_code, 503)
+        data = json.loads(response.data)
+        self.assertIn("slow down", data["error"])
 
 
 class TestPrefetchWorker(unittest.TestCase):
