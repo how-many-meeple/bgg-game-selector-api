@@ -16,6 +16,7 @@ from boardgame.board_game import (
     BoardGameListNotFoundError,
     BoardGameUserNotFoundError,
 )
+from boardgamegeek.exceptions import BGGApiError
 from boardgame.filter import Filter
 from boardgame.filter_processor import FilterProcessor
 from boardgame.prefetch_status import (
@@ -99,6 +100,8 @@ def show_games_in_collection(username, game_filter):
         return json.dumps(games)
     except BoardGameUserNotFoundError as error:
         return jsonify({"error": error.message}), 404
+    except BGGApiError:
+        return jsonify({"error": "BGG is rate limiting requests, please slow down and retry"}), 503
 
 
 @app.route("/geeklist/<geek_list>")
@@ -114,6 +117,8 @@ def show_games_in_list(geek_list, game_filter):
         return json.dumps(games)
     except (BoardGameUserNotFoundError, BoardGameListNotFoundError) as error:
         return jsonify({"error": error.message}), 404
+    except BGGApiError:
+        return jsonify({"error": "BGG is rate limiting requests, please slow down and retry"}), 503
 
 
 @app.route("/cors-proxy/<b64:url>")
