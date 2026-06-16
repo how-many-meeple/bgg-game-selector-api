@@ -1,0 +1,12 @@
+{
+  "resources": {
+    "includes": [
+      {"pattern": "application\\.conf"},
+      {"pattern": "logback\\.xml"},
+      {"pattern": "reference\\.conf"},
+      {"pattern": "META-INF/services/.*"},
+      {"pattern": "META-INF/native-image/.*"},
+      {"pattern": "software/amazon/awssdk/.*"}
+    ]
+  }
+}

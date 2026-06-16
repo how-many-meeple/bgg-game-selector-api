@@ -1,0 +1,16 @@
+# SAM CLI configuration for Scala v3 native deployment
+version = 0.1
+
+[default.build.parameters]
+template_file = "deployment/serverless-template.yaml"
+
+[default.deploy.parameters]
+stack_name = "bgg-game-selector-api"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-zjsii3ilcqbk"
+s3_prefix = "bgg-game-selector-api-v3"
+profile = "howmanymeeple"
+confirm_changeset = false
+# BggAccessToken must be supplied at deploy time:
+# sam deploy --parameter-overrides "BggAccessToken=<key>"

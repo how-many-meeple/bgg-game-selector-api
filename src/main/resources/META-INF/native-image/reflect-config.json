@@ -1,0 +1,77 @@
+[
+  {
+    "name": "bgg.lambda.ApiLambdaHandler",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "bgg.lambda.PrefetchWorker",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "com.amazonaws.services.lambda.runtime.events.SQSEvent",
+    "allDeclaredFields": true,
+    "allPublicMethods": true,
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "com.amazonaws.services.lambda.runtime.events.SQSEvent$SQSMessage",
+    "allDeclaredFields": true,
+    "allPublicMethods": true,
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "ch.qos.logback.classic.LoggerContext",
+    "allPublicMethods": true,
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "ch.qos.logback.classic.encoder.PatternLayoutEncoder",
+    "allPublicMethods": true,
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "ch.qos.logback.core.ConsoleAppender",
+    "allPublicMethods": true,
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "ch.qos.logback.classic.pattern.DateConverter",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "ch.qos.logback.classic.pattern.LevelConverter",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "ch.qos.logback.classic.pattern.LoggerConverter",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "ch.qos.logback.classic.pattern.MessageConverter",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "ch.qos.logback.classic.pattern.LineSeparatorConverter",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "ch.qos.logback.classic.pattern.ThreadConverter",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "sun.security.provider.NativePRNG",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient",
+    "allPublicMethods": true
+  },
+  {
+    "name": "software.amazon.awssdk.services.dynamodb.DynamoDbClient",
+    "queryAllPublicMethods": true
+  },
+  {
+    "name": "software.amazon.awssdk.services.sqs.SqsClient",
+    "queryAllPublicMethods": true
+  }
+]
