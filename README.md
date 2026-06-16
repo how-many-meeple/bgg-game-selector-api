@@ -1,4 +1,6 @@
-# BGG Game Selector API
+# BGG Game Selector API (Python v2 - Archived)
+
+> **This version is no longer actively maintained.** The API has been rewritten in Scala 3 with GraalVM native-image for Lambda deployment. This branch exists for reference only.
 
 A cost-optimized REST API for filtering and selecting board games from BoardGameGeek (BGG). Caches game data to minimize API calls and reduce AWS costs. Runs within AWS free-tier limits.
 
