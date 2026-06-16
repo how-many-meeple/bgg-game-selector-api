@@ -12,9 +12,7 @@ A REST API for filtering, selecting, and recommending board games from BoardGame
 | Lambda packaging | Docker container (~250 MB) | GraalVM native binary (~30 MB) |
 | Cold start | ~3-5 s | ~200-400 ms |
 | Concurrency model | WSGI (single-threaded per request) | Structured concurrency (Ox) |
-| Recommendations | - | Cosine-similarity vector engine |
 | Type safety | Runtime checks | Compile-time (opaque types, exhaustive matching) |
-| Local dev cache | Memory (lost on restart) | SQLite (persistent) or Memory |
 
 ## Prerequisites
 
