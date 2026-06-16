@@ -1,9 +1,9 @@
 package bgg.store
 
+import bgg.SafeOps.{decodeJson, tryAwsCall}
 import bgg.domain.GameId
 import bgg.vector.GameVector
-import com.typesafe.scalalogging.StrictLogging
-import io.circe.parser.decode
+import com.typesafe.scalalogging.{Logger, StrictLogging}
 import io.circe.syntax.*
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import software.amazon.awssdk.services.dynamodb.model.*
@@ -13,41 +13,40 @@ import scala.jdk.CollectionConverters.*
 
 class DynamoDbVectorStore(client: DynamoDbClient, tableName: String) extends VectorStore with StrictLogging:
 
+  private given Logger = logger
+
   def save(sv: StoredVector): Unit =
     val item = Map(
-      "game_id" -> AttributeValue.fromN(sv.gameId.value.toString),
+      "game_id" -> AttributeValue.fromN(sv.gameId.asString),
       "name" -> AttributeValue.fromS(sv.name),
       "vector" -> AttributeValue.fromS(sv.vector.values.asJson.noSpaces),
       "updated_at" -> AttributeValue.fromS(sv.updatedAt.toString)
     ).asJava
 
-    try client.putItem(PutItemRequest.builder().tableName(tableName).item(item).build()): Unit
-    catch case e: Exception => logger.error(s"Error saving vector for game ${sv.gameId.value}", e)
+    tryAwsCall(
+      client.putItem(PutItemRequest.builder().tableName(tableName).item(item).build()),
+      s"Error saving vector for game ${sv.gameId.value}"
+    )
 
   def load(id: GameId): Option[StoredVector] =
-    try
-      val response = client.getItem(
+    tryAwsCall(
+      client.getItem(
         GetItemRequest
           .builder()
           .tableName(tableName)
-          .key(Map("game_id" -> AttributeValue.fromN(id.value.toString)).asJava)
+          .key(Map("game_id" -> AttributeValue.fromN(id.asString)).asJava)
           .build()
-      )
-      if response.hasItem then parseItem(response.item()) else None
-    catch
-      case e: Exception =>
-        logger.error(s"Error loading vector for game $id from DynamoDB", e)
-        None
+      ),
+      s"Error loading vector for game $id from DynamoDB"
+    ).filter(_.hasItem).flatMap(response => parseItem(response.item()))
 
   def loadAll(): List[StoredVector] =
-    try
-      val result = scanAll(exclusiveStartKey = None, acc = Nil)
-      logger.info(s"Loaded ${result.size} vectors from DynamoDB")
-      result
-    catch
-      case e: Exception =>
-        logger.error("Error loading all vectors from DynamoDB", e)
-        Nil
+    tryAwsCall(scanAll(exclusiveStartKey = None, acc = Nil), "Error loading all vectors from DynamoDB")
+      .map { result =>
+        logger.info(s"Loaded ${result.size} vectors from DynamoDB")
+        result
+      }
+      .getOrElse(Nil)
 
   @scala.annotation.tailrec
   private def scanAll(
@@ -63,16 +62,11 @@ class DynamoDbVectorStore(client: DynamoDbClient, tableName: String) extends Vec
     else updated
 
   private def parseItem(item: java.util.Map[String, AttributeValue]): Option[StoredVector] =
-    decode[Vector[Double]](item.get("vector").s()) match
-      case Left(e) =>
-        logger.error(s"Failed to decode vector for item", e)
-        None
-      case Right(vec) =>
-        Some(
-          StoredVector(
-            gameId = GameId(item.get("game_id").n().toInt),
-            name = item.get("name").s(),
-            vector = GameVector(vec),
-            updatedAt = Instant.parse(item.get("updated_at").s())
-          )
-        )
+    decodeJson[Vector[Double]](item.get("vector").s(), "vector from DynamoDB").map { vec =>
+      StoredVector(
+        gameId = GameId(item.get("game_id").n().toInt),
+        name = item.get("name").s(),
+        vector = GameVector(vec),
+        updatedAt = Instant.parse(item.get("updated_at").s())
+      )
+    }

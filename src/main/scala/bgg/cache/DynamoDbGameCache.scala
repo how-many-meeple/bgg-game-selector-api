@@ -1,8 +1,8 @@
 package bgg.cache
 
+import bgg.SafeOps.{decodeJson, tryAwsCall}
 import bgg.domain.{GameData, GameId}
-import com.typesafe.scalalogging.StrictLogging
-import io.circe.parser.decode
+import com.typesafe.scalalogging.{Logger, StrictLogging}
 import io.circe.syntax.*
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import software.amazon.awssdk.services.dynamodb.model.*
@@ -14,13 +14,14 @@ class DynamoDbGameCache(client: DynamoDbClient, tableName: String, ttlSeconds: I
     extends GameCache
     with StrictLogging:
 
-  // No-op: DynamoDB TTL handles eviction automatically
+  private given Logger = logger
+
   def evictExpired(): Unit = ()
 
   def save(game: GameData): Unit =
     val ttl = Instant.now().getEpochSecond + ttlSeconds
     val item = Map(
-      "id" -> AttributeValue.fromS(game.id.value.toString),
+      "id" -> AttributeValue.fromS(game.id.asString),
       "data" -> AttributeValue.fromS(game.asJson.noSpaces),
       "cache_timestamp" -> AttributeValue.fromS(Instant.now().toString),
       "ttl" -> AttributeValue.fromN(ttl.toString)
@@ -30,7 +31,6 @@ class DynamoDbGameCache(client: DynamoDbClient, tableName: String, ttlSeconds: I
       .builder()
       .tableName(tableName)
       .item(item)
-      // Only write if not already cached — avoids redundant writes
       .conditionExpression("attribute_not_exists(id)")
       .build()
 
@@ -47,19 +47,9 @@ class DynamoDbGameCache(client: DynamoDbClient, tableName: String, ttlSeconds: I
     val request = GetItemRequest
       .builder()
       .tableName(tableName)
-      .key(Map("id" -> AttributeValue.fromS(id.value.toString)).asJava)
+      .key(Map("id" -> AttributeValue.fromS(id.asString)).asJava)
       .build()
 
-    try
-      val response = client.getItem(request)
-      if response.hasItem then
-        decode[GameData](response.item().get("data").s()) match
-          case Right(g) => Some(g)
-          case Left(e) =>
-            logger.error(s"Failed to decode game $id from DynamoDB", e)
-            None
-      else None
-    catch
-      case e: Exception =>
-        logger.error(s"Error loading game $id from DynamoDB", e)
-        None
+    tryAwsCall(client.getItem(request), s"Error loading game $id from DynamoDB")
+      .filter(_.hasItem)
+      .flatMap(response => decodeJson[GameData](response.item().get("data").s(), s"game $id from DynamoDB"))

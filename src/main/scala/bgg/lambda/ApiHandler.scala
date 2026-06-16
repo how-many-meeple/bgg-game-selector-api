@@ -32,7 +32,7 @@ object ApiHandler extends OxApp.Simple with StrictLogging:
     val httpBackend = useInScope(DefaultSyncBackend())(_.close())
     val bggClient = BggXmlClient(config.bgg, httpBackend)
 
-    config.cache.backend match
+    val (gameCache, vectorStore, prefetchStore, sqsSender) = config.cache.backend match
       case CacheBackend.DynamoDB =>
         val dynamo = useInScope(
           DynamoDbClient
@@ -48,30 +48,32 @@ object ApiHandler extends OxApp.Simple with StrictLogging:
             .httpClient(UrlConnectionHttpClient.create())
             .build()
         )(_.close())
-
-        val gameCache = DynamoDbGameCache(dynamo, config.aws.dynamoGameTable, config.cache.gameCacheTtlSeconds)
-        val vectorStore = DynamoDbVectorStore(dynamo, config.aws.dynamoVectorTable)
-        val prefetchStore = DynamoDbPrefetchStatusStore(dynamo, config.aws.dynamoPrefetchTable)
-        val sqsSender = AwsSqsSender(sqs, config.aws.prefetchSqsUrl)
-        val gameService =
-          GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
-        ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, sqsSender, config)
+        (
+          DynamoDbGameCache(dynamo, config.aws.dynamoGameTable, config.cache.gameCacheTtlSeconds),
+          DynamoDbVectorStore(dynamo, config.aws.dynamoVectorTable),
+          DynamoDbPrefetchStatusStore(dynamo, config.aws.dynamoPrefetchTable),
+          AwsSqsSender(sqs, config.aws.prefetchSqsUrl)
+        )
 
       case CacheBackend.SQLite =>
-        val gameCache = SqliteGameCache(config.cache.sqliteGameCachePath, config.cache.gameCacheTtlSeconds)
-        val vectorStore = SqliteVectorStore(config.cache.sqliteVectorStorePath)
-        val prefetchStore = SqlitePrefetchStatusStore(config.cache.sqlitePrefetchStatusPath)
-        val gameService =
-          GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
-        ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, NoOpSqsSender(), config)
+        (
+          SqliteGameCache(config.cache.sqliteGameCachePath, config.cache.gameCacheTtlSeconds),
+          SqliteVectorStore(config.cache.sqliteVectorStorePath),
+          SqlitePrefetchStatusStore(config.cache.sqlitePrefetchStatusPath),
+          NoOpSqsSender()
+        )
 
       case CacheBackend.Memory =>
-        val gameCache = MemoryGameCache(config.cache.gameCacheTtlSeconds)
-        val vectorStore = SqliteVectorStore(config.cache.sqliteVectorStorePath)
-        val prefetchStore = SqlitePrefetchStatusStore(config.cache.sqlitePrefetchStatusPath)
-        val gameService =
-          GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
-        ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, NoOpSqsSender(), config)
+        (
+          MemoryGameCache(config.cache.gameCacheTtlSeconds),
+          SqliteVectorStore(config.cache.sqliteVectorStorePath),
+          SqlitePrefetchStatusStore(config.cache.sqlitePrefetchStatusPath),
+          NoOpSqsSender()
+        )
+
+    val gameService =
+      GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
+    ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, sqsSender, config)
 
   private def startServer(endpoints: ApiEndpoints, config: AppConfig): Unit =
     val serverOptions = NettySyncServerOptions.customiseInterceptors

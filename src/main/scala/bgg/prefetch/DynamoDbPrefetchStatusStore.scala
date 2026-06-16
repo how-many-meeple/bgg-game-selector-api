@@ -1,7 +1,8 @@
 package bgg.prefetch
 
+import bgg.SafeOps.tryAwsCall
 import bgg.domain.SourceType
-import com.typesafe.scalalogging.StrictLogging
+import com.typesafe.scalalogging.{Logger, StrictLogging}
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import software.amazon.awssdk.services.dynamodb.model.*
 
@@ -12,31 +13,30 @@ class DynamoDbPrefetchStatusStore(client: DynamoDbClient, tableName: String)
     extends PrefetchStatusStore
     with StrictLogging:
 
+  private given Logger = logger
+
   def get(sourceType: SourceType, sourceId: String): Option[PrefetchRecord] =
-    try
-      val response = client.getItem(
+    tryAwsCall(
+      client.getItem(
         GetItemRequest
           .builder()
           .tableName(tableName)
           .key(Map("id" -> AttributeValue.fromS(statusKey(sourceType, sourceId))).asJava)
           .build()
+      ),
+      "Failed to read prefetch status from DynamoDB"
+    ).filter(_.hasItem).flatMap { response =>
+      val item = response.item()
+      val expiresAt = Instant.ofEpochSecond(item.get("ttl").n().toLong)
+      val record = PrefetchRecord(
+        sourceType = SourceType.fromString(item.get("source_type").s()).getOrElse(sourceType),
+        sourceId = item.get("source_id").s(),
+        status = PrefetchStatus.fromDbKey(item.get("status").s()),
+        reason = Option(item.get("reason")).map(_.s()).getOrElse(""),
+        expiresAt = expiresAt
       )
-      if response.hasItem then
-        val item = response.item()
-        val expiresAt = Instant.ofEpochSecond(item.get("ttl").n().toLong)
-        val record = PrefetchRecord(
-          sourceType = SourceType.fromString(item.get("source_type").s()).getOrElse(sourceType),
-          sourceId = item.get("source_id").s(),
-          status = parseStatus(item.get("status").s()),
-          reason = Option(item.get("reason")).map(_.s()).getOrElse(""),
-          expiresAt = expiresAt
-        )
-        Option.when(!record.isExpired)(record)
-      else None
-    catch
-      case e: Exception =>
-        logger.error("Failed to read prefetch status from DynamoDB", e)
-        None
+      Option.when(!record.isExpired)(record)
+    }
 
   def set(sourceType: SourceType, sourceId: String, status: PrefetchStatus, reason: String = ""): Unit =
     val item = Map(
@@ -48,12 +48,7 @@ class DynamoDbPrefetchStatusStore(client: DynamoDbClient, tableName: String)
       "ttl" -> AttributeValue.fromN(PrefetchTtl.expiresAt(status).getEpochSecond.toString)
     ).asJava
 
-    try client.putItem(PutItemRequest.builder().tableName(tableName).item(item).build()): Unit
-    catch case e: Exception => logger.error("Failed to write prefetch status to DynamoDB", e)
-
-  private def parseStatus(s: String): PrefetchStatus = s match
-    case "pending"    => PrefetchStatus.Pending
-    case "processing" => PrefetchStatus.Processing
-    case "completed"  => PrefetchStatus.Completed
-    case "not_found"  => PrefetchStatus.NotFound
-    case _            => PrefetchStatus.Failed
+    tryAwsCall(
+      client.putItem(PutItemRequest.builder().tableName(tableName).item(item).build()),
+      "Failed to write prefetch status to DynamoDB"
+    )
