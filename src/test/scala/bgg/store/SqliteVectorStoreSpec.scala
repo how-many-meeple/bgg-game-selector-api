@@ -49,6 +49,6 @@ class SqliteVectorStoreSpec extends AnyWordSpec with Matchers with BeforeAndAfte
 
     "round-trip vector values precisely" in:
       val vec = Vector(0.123456789, -0.987654321, 0.0, 1.0)
-      val v   = StoredVector(GameId(1), "Precise", GameVector(vec), Instant.now())
+      val v = StoredVector(GameId(1), "Precise", GameVector(vec), Instant.now())
       store.save(v)
       store.load(GameId(1)).map(_.vector.values) shouldBe Some(vec)

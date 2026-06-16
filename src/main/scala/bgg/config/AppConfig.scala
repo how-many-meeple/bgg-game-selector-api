@@ -6,14 +6,14 @@ case class AppConfig(
     bgg: BggConfig,
     cache: CacheConfig,
     aws: AwsConfig,
-    server: ServerConfig,
+    server: ServerConfig
 )
 
 case class BggConfig(
     accessToken: String,
     timeoutSeconds: Int,
     retries: Int,
-    retryDelaySeconds: Int,
+    retryDelaySeconds: Int
 )
 
 enum CacheBackend:
@@ -27,7 +27,7 @@ case class CacheConfig(
     sqliteRequestCachePath: String,
     sqliteGameCachePath: String,
     sqliteVectorStorePath: String,
-    sqlitePrefetchStatusPath: String,
+    sqlitePrefetchStatusPath: String
 )
 
 case class AwsConfig(
@@ -36,13 +36,13 @@ case class AwsConfig(
     dynamoGameTable: String,
     dynamoVectorTable: String,
     dynamoPrefetchTable: String,
-    prefetchSqsUrl: String,
+    prefetchSqsUrl: String
 )
 
 case class ServerConfig(
     host: String,
     port: Int,
-    allowedOrigins: List[String],
+    allowedOrigins: List[String]
 )
 
 object AppConfig:
@@ -54,7 +54,7 @@ object AppConfig:
       accessToken = c.getString("bgg.accessToken"),
       timeoutSeconds = c.getInt("bgg.timeoutSeconds"),
       retries = c.getInt("bgg.retries"),
-      retryDelaySeconds = c.getInt("bgg.retryDelaySeconds"),
+      retryDelaySeconds = c.getInt("bgg.retryDelaySeconds")
     )
 
     val backendStr = c.getString("cache.backend")
@@ -71,7 +71,7 @@ object AppConfig:
       sqliteRequestCachePath = c.getString("cache.sqliteRequestCachePath"),
       sqliteGameCachePath = c.getString("cache.sqliteGameCachePath"),
       sqliteVectorStorePath = c.getString("cache.sqliteVectorStorePath"),
-      sqlitePrefetchStatusPath = c.getString("cache.sqlitePrefetchStatusPath"),
+      sqlitePrefetchStatusPath = c.getString("cache.sqlitePrefetchStatusPath")
     )
 
     val aws = AwsConfig(
@@ -80,7 +80,7 @@ object AppConfig:
       dynamoGameTable = c.getString("aws.dynamoGameTable"),
       dynamoVectorTable = c.getString("aws.dynamoVectorTable"),
       dynamoPrefetchTable = c.getString("aws.dynamoPrefetchTable"),
-      prefetchSqsUrl = c.getString("aws.prefetchSqsUrl"),
+      prefetchSqsUrl = c.getString("aws.prefetchSqsUrl")
     )
 
     val server = ServerConfig(
@@ -89,7 +89,7 @@ object AppConfig:
       allowedOrigins = {
         import scala.jdk.CollectionConverters.*
         c.getStringList("server.allowedOrigins").asScala.toList
-      },
+      }
     )
 
     AppConfig(bgg, cache, aws, server)

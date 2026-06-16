@@ -30,42 +30,47 @@ object ApiHandler extends OxApp.Simple with StrictLogging:
 
   private def buildDependencies(config: AppConfig)(using Ox) =
     val httpBackend = useInScope(DefaultSyncBackend())(_.close())
-    val bggClient   = BggXmlClient(config.bgg, httpBackend)
+    val bggClient = BggXmlClient(config.bgg, httpBackend)
 
     config.cache.backend match
       case CacheBackend.DynamoDB =>
         val dynamo = useInScope(
-          DynamoDbClient.builder()
+          DynamoDbClient
+            .builder()
             .region(Region.of(config.aws.region))
             .httpClient(UrlConnectionHttpClient.create())
             .build()
         )(_.close())
         val sqs = useInScope(
-          SqsClient.builder()
+          SqsClient
+            .builder()
             .region(Region.of(config.aws.region))
             .httpClient(UrlConnectionHttpClient.create())
             .build()
         )(_.close())
 
-        val gameCache      = DynamoDbGameCache(dynamo, config.aws.dynamoGameTable, config.cache.gameCacheTtlSeconds)
-        val vectorStore    = DynamoDbVectorStore(dynamo, config.aws.dynamoVectorTable)
-        val prefetchStore  = DynamoDbPrefetchStatusStore(dynamo, config.aws.dynamoPrefetchTable)
-        val sqsSender      = AwsSqsSender(sqs, config.aws.prefetchSqsUrl)
-        val gameService    = GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
+        val gameCache = DynamoDbGameCache(dynamo, config.aws.dynamoGameTable, config.cache.gameCacheTtlSeconds)
+        val vectorStore = DynamoDbVectorStore(dynamo, config.aws.dynamoVectorTable)
+        val prefetchStore = DynamoDbPrefetchStatusStore(dynamo, config.aws.dynamoPrefetchTable)
+        val sqsSender = AwsSqsSender(sqs, config.aws.prefetchSqsUrl)
+        val gameService =
+          GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
         ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, sqsSender, config)
 
       case CacheBackend.SQLite =>
-        val gameCache     = SqliteGameCache(config.cache.sqliteGameCachePath, config.cache.gameCacheTtlSeconds)
-        val vectorStore   = SqliteVectorStore(config.cache.sqliteVectorStorePath)
+        val gameCache = SqliteGameCache(config.cache.sqliteGameCachePath, config.cache.gameCacheTtlSeconds)
+        val vectorStore = SqliteVectorStore(config.cache.sqliteVectorStorePath)
         val prefetchStore = SqlitePrefetchStatusStore(config.cache.sqlitePrefetchStatusPath)
-        val gameService   = GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
+        val gameService =
+          GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
         ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, NoOpSqsSender(), config)
 
       case CacheBackend.Memory =>
-        val gameCache     = MemoryGameCache(config.cache.gameCacheTtlSeconds)
-        val vectorStore   = SqliteVectorStore(config.cache.sqliteVectorStorePath)
+        val gameCache = MemoryGameCache(config.cache.gameCacheTtlSeconds)
+        val vectorStore = SqliteVectorStore(config.cache.sqliteVectorStorePath)
         val prefetchStore = SqlitePrefetchStatusStore(config.cache.sqlitePrefetchStatusPath)
-        val gameService   = GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
+        val gameService =
+          GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
         ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, NoOpSqsSender(), config)
 
   private def startServer(endpoints: ApiEndpoints, config: AppConfig): Unit =
@@ -74,7 +79,7 @@ object ApiHandler extends OxApp.Simple with StrictLogging:
         msg =>
           if msg == "Not Found" then ValuedEndpointOutput(ErrorOutput.failOutput, bgg.domain.Fail.NotFound(msg))
           else ValuedEndpointOutput(ErrorOutput.failOutput, bgg.domain.Fail.IncorrectInput(msg)),
-        notFoundWhenRejected = true,
+        notFoundWhenRejected = true
       )
       .options
 

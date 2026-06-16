@@ -5,18 +5,18 @@ import bgg.domain.SourceType
 import java.time.Instant
 
 enum PrefetchStatus(val dbKey: String):
-  case Pending    extends PrefetchStatus("pending")
+  case Pending extends PrefetchStatus("pending")
   case Processing extends PrefetchStatus("processing")
-  case Completed  extends PrefetchStatus("completed")
-  case NotFound   extends PrefetchStatus("not_found")
-  case Failed     extends PrefetchStatus("failed")
+  case Completed extends PrefetchStatus("completed")
+  case NotFound extends PrefetchStatus("not_found")
+  case Failed extends PrefetchStatus("failed")
 
 case class PrefetchRecord(
     sourceType: SourceType,
     sourceId: String,
     status: PrefetchStatus,
     reason: String,
-    expiresAt: Instant,
+    expiresAt: Instant
 ):
   def isExpired: Boolean = Instant.now().isAfter(expiresAt)
 

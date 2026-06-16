@@ -5,16 +5,16 @@ import bgg.domain.GameData
 opaque type GameVector = Vector[Double]
 
 object GameVector:
-  def apply(values: Vector[Double]): GameVector          = values
-  extension (v: GameVector) def values: Vector[Double]   = v
-  extension (v: GameVector) def dimensions: Int          = v.size
+  def apply(values: Vector[Double]): GameVector = values
+  extension (v: GameVector) def values: Vector[Double] = v
+  extension (v: GameVector) def dimensions: Int = v.size
 
 object VectorMath:
-  private val MaxWeight       = 5.0
-  private val MaxPlaytime     = 240.0
-  private val MinPlayerCount  = 1.0
-  private val MaxPlayerCount  = 10.0
-  private val MaxRating       = 10.0
+  private val MaxWeight = 5.0
+  private val MaxPlaytime = 240.0
+  private val MinPlayerCount = 1.0
+  private val MaxPlayerCount = 10.0
+  private val MaxRating = 10.0
 
   def l2Normalise(v: Vector[Double]): Vector[Double] =
     val magnitude = math.sqrt(v.map(x => x * x).sum)
@@ -33,17 +33,17 @@ object VectorMath:
     else (clamp(value, min, max) - min) / (max - min)
 
   def generateGameVector(game: GameData): GameVector =
-    val mechanics  = game.mechanics.toSet
+    val mechanics = game.mechanics.toSet
     val categories = game.categories.toSet
 
-    val mechanicBits  = MechanicVocabulary.map(m => if mechanics.contains(m) then 1.0 else 0.0)
-    val categoryBits  = CategoryVocabulary.map(c => if categories.contains(c) then 1.0 else 0.0)
+    val mechanicBits = MechanicVocabulary.map(m => if mechanics.contains(m) then 1.0 else 0.0)
+    val categoryBits = CategoryVocabulary.map(c => if categories.contains(c) then 1.0 else 0.0)
 
-    val weight     = minMaxNorm(game.ratingAverageWeight.getOrElse(0.0), 0, MaxWeight)
-    val playtime   = minMaxNorm(game.playingTime.orElse(game.maxPlayingTime).getOrElse(0).toDouble, 0, MaxPlaytime)
+    val weight = minMaxNorm(game.ratingAverageWeight.getOrElse(0.0), 0, MaxWeight)
+    val playtime = minMaxNorm(game.playingTime.orElse(game.maxPlayingTime).getOrElse(0).toDouble, 0, MaxPlaytime)
     val minPlayers = minMaxNorm(game.minPlayers.getOrElse(1).toDouble, MinPlayerCount, MaxPlayerCount)
     val maxPlayers = minMaxNorm(game.maxPlayers.getOrElse(1).toDouble, MinPlayerCount, MaxPlayerCount)
-    val rating     = minMaxNorm(game.ratingAverage.getOrElse(0.0), 0, MaxRating)
+    val rating = minMaxNorm(game.ratingAverage.getOrElse(0.0), 0, MaxRating)
     val isCoopFlag = if (mechanics & CooperativeMechanics).nonEmpty then 1.0 else 0.0
 
     val raw = mechanicBits ++ categoryBits ++ Vector(weight, playtime, minPlayers, maxPlayers, rating, isCoopFlag)
@@ -53,11 +53,11 @@ object VectorMath:
     if games.isEmpty then return GameVector(Vector.fill(VectorDimensions)(0.0))
 
     val gameVectors = games.map(generateGameVector)
-    val nGames      = gameVectors.size
-    val nMechanics  = MechanicVocabulary.size
+    val nGames = gameVectors.size
+    val nMechanics = MechanicVocabulary.size
     val nCategories = CategoryVocabulary.size
     val multihotEnd = nMechanics + nCategories
-    val numericEnd  = multihotEnd + 5
+    val numericEnd = multihotEnd + 5
 
     // Element-wise sum across all game vectors
     val summed = gameVectors.foldLeft(Vector.fill(VectorDimensions)(0.0)) { (acc, vec) =>

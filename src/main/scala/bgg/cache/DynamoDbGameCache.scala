@@ -20,13 +20,14 @@ class DynamoDbGameCache(client: DynamoDbClient, tableName: String, ttlSeconds: I
   def save(game: GameData): Unit =
     val ttl = Instant.now().getEpochSecond + ttlSeconds
     val item = Map(
-      "id"              -> AttributeValue.fromS(game.id.value.toString),
-      "data"            -> AttributeValue.fromS(game.asJson.noSpaces),
+      "id" -> AttributeValue.fromS(game.id.value.toString),
+      "data" -> AttributeValue.fromS(game.asJson.noSpaces),
       "cache_timestamp" -> AttributeValue.fromS(Instant.now().toString),
-      "ttl"             -> AttributeValue.fromN(ttl.toString),
+      "ttl" -> AttributeValue.fromN(ttl.toString)
     ).asJava
 
-    val request = PutItemRequest.builder()
+    val request = PutItemRequest
+      .builder()
       .tableName(tableName)
       .item(item)
       // Only write if not already cached — avoids redundant writes
@@ -43,7 +44,8 @@ class DynamoDbGameCache(client: DynamoDbClient, tableName: String, ttlSeconds: I
         logger.error(s"Error saving game ${game.id.value} to cache", e)
 
   def load(id: GameId): Option[GameData] =
-    val request = GetItemRequest.builder()
+    val request = GetItemRequest
+      .builder()
       .tableName(tableName)
       .key(Map("id" -> AttributeValue.fromS(id.value.toString)).asJava)
       .build()
@@ -53,7 +55,7 @@ class DynamoDbGameCache(client: DynamoDbClient, tableName: String, ttlSeconds: I
       if response.hasItem then
         decode[GameData](response.item().get("data").s()) match
           case Right(g) => Some(g)
-          case Left(e)  =>
+          case Left(e) =>
             logger.error(s"Failed to decode game $id from DynamoDB", e)
             None
       else None

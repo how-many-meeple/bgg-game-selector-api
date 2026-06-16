@@ -11,16 +11,14 @@ import software.amazon.awssdk.services.dynamodb.model.*
 import java.time.Instant
 import scala.jdk.CollectionConverters.*
 
-class DynamoDbVectorStore(client: DynamoDbClient, tableName: String)
-    extends VectorStore
-    with StrictLogging:
+class DynamoDbVectorStore(client: DynamoDbClient, tableName: String) extends VectorStore with StrictLogging:
 
   def save(sv: StoredVector): Unit =
     val item = Map(
-      "game_id"    -> AttributeValue.fromN(sv.gameId.value.toString),
-      "name"       -> AttributeValue.fromS(sv.name),
-      "vector"     -> AttributeValue.fromS(sv.vector.values.asJson.noSpaces),
-      "updated_at" -> AttributeValue.fromS(sv.updatedAt.toString),
+      "game_id" -> AttributeValue.fromN(sv.gameId.value.toString),
+      "name" -> AttributeValue.fromS(sv.name),
+      "vector" -> AttributeValue.fromS(sv.vector.values.asJson.noSpaces),
+      "updated_at" -> AttributeValue.fromS(sv.updatedAt.toString)
     ).asJava
 
     try client.putItem(PutItemRequest.builder().tableName(tableName).item(item).build()): Unit
@@ -29,7 +27,8 @@ class DynamoDbVectorStore(client: DynamoDbClient, tableName: String)
   def load(id: GameId): Option[StoredVector] =
     try
       val response = client.getItem(
-        GetItemRequest.builder()
+        GetItemRequest
+          .builder()
           .tableName(tableName)
           .key(Map("game_id" -> AttributeValue.fromN(id.value.toString)).asJava)
           .build()
@@ -53,13 +52,13 @@ class DynamoDbVectorStore(client: DynamoDbClient, tableName: String)
   @scala.annotation.tailrec
   private def scanAll(
       exclusiveStartKey: Option[java.util.Map[String, AttributeValue]],
-      acc: List[StoredVector],
+      acc: List[StoredVector]
   ): List[StoredVector] =
     val reqBuilder = ScanRequest.builder().tableName(tableName)
     exclusiveStartKey.foreach(k => reqBuilder.exclusiveStartKey(k))
     val response = client.scan(reqBuilder.build())
-    val page     = response.items().asScala.flatMap(parseItem).toList
-    val updated  = acc ::: page
+    val page = response.items().asScala.flatMap(parseItem).toList
+    val updated = acc ::: page
     if response.hasLastEvaluatedKey then scanAll(Some(response.lastEvaluatedKey()), updated)
     else updated
 
@@ -69,9 +68,11 @@ class DynamoDbVectorStore(client: DynamoDbClient, tableName: String)
         logger.error(s"Failed to decode vector for item", e)
         None
       case Right(vec) =>
-        Some(StoredVector(
-          gameId    = GameId(item.get("game_id").n().toInt),
-          name      = item.get("name").s(),
-          vector    = GameVector(vec),
-          updatedAt = Instant.parse(item.get("updated_at").s()),
-        ))
+        Some(
+          StoredVector(
+            gameId = GameId(item.get("game_id").n().toInt),
+            name = item.get("name").s(),
+            vector = GameVector(vec),
+            updatedAt = Instant.parse(item.get("updated_at").s())
+          )
+        )

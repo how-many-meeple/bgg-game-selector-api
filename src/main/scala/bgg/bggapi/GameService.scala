@@ -14,7 +14,7 @@ class GameService(
     gameCache: GameCache,
     vectorStore: VectorStore,
     vectorMinRatings: Int,
-    clock: () => Instant,
+    clock: () => Instant
 ) extends StrictLogging:
 
   def resolveGameIds(ids: List[GameId]): Either[Fail, List[GameData]] =
@@ -37,7 +37,7 @@ class GameService(
 
   private def partitionCached(ids: List[GameId]): (List[GameData], List[GameId]) =
     val (hits, misses) = ids.partition(id => gameCache.load(id).isDefined)
-    val hitData        = hits.flatMap(gameCache.load)
+    val hitData = hits.flatMap(gameCache.load)
     (hitData, misses)
 
   private def cacheAndSync(game: GameData): Unit =
@@ -48,18 +48,19 @@ class GameService(
     val (shouldSync, reason) = shouldVectorize(game)
     if shouldSync then
       val vector = VectorMath.generateGameVector(game)
-      vectorStore.save(StoredVector(
-        gameId    = game.id,
-        name      = game.name,
-        vector    = vector,
-        updatedAt = clock(),
-      ))
+      vectorStore.save(
+        StoredVector(
+          gameId = game.id,
+          name = game.name,
+          vector = vector,
+          updatedAt = clock()
+        )
+      )
       logger.debug(s"Synced vector for game ${game.id.value} (${game.name}) — $reason")
-    else
-      logger.debug(s"Skipping vector for game ${game.id.value} (${game.name}) — $reason")
+    else logger.debug(s"Skipping vector for game ${game.id.value} (${game.name}) — $reason")
 
-  private val NewGameThresholdYears  = 1
-  private val NewGameMinRatings      = 10
+  private val NewGameThresholdYears = 1
+  private val NewGameMinRatings = 10
 
   private def shouldVectorize(game: GameData): (Boolean, String) =
     val usersRated = game.usersRated.getOrElse(0)
@@ -69,6 +70,5 @@ class GameService(
     if yearsOld <= NewGameThresholdYears then
       if usersRated >= NewGameMinRatings then (true, s"new game with $usersRated ratings")
       else (false, s"new game but only $usersRated ratings (min: $NewGameMinRatings)")
-    else
-      if usersRated >= vectorMinRatings then (true, s"$usersRated ratings")
-      else (false, s"only $usersRated ratings (min: $vectorMinRatings)")
+    else if usersRated >= vectorMinRatings then (true, s"$usersRated ratings")
+    else (false, s"only $usersRated ratings (min: $vectorMinRatings)")

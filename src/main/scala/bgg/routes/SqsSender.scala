@@ -11,11 +11,14 @@ trait SqsSender:
 
 class AwsSqsSender(sqsClient: SqsClient, queueUrl: String) extends SqsSender with StrictLogging:
   def send(sourceType: SourceType, sourceId: String): Unit =
-    val body = Json.obj(
-      "source_type" -> Json.fromString(sourceType.toPathSegment),
-      "source_id"   -> Json.fromString(sourceId),
-    ).noSpaces
-    val request = SendMessageRequest.builder()
+    val body = Json
+      .obj(
+        "source_type" -> Json.fromString(sourceType.toPathSegment),
+        "source_id" -> Json.fromString(sourceId)
+      )
+      .noSpaces
+    val request = SendMessageRequest
+      .builder()
       .queueUrl(queueUrl)
       .messageBody(body)
       .build()

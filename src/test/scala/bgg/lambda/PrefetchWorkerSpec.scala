@@ -40,7 +40,7 @@ class PrefetchWorkerSpec extends AnyWordSpec with Matchers with BeforeAndAfterEa
     "set status to Completed on successful collection fetch" in:
       val client = stubClient(
         collectionResult = Right(List(GameId(1), GameId(2))),
-        gamesResult = Right(List(testGame(1, "Catan"), testGame(2, "Pandemic"))),
+        gamesResult = Right(List(testGame(1, "Catan"), testGame(2, "Pandemic")))
       )
       val worker = makeWorker(client)
 
@@ -51,7 +51,7 @@ class PrefetchWorkerSpec extends AnyWordSpec with Matchers with BeforeAndAfterEa
     "set status to Completed on successful geeklist fetch" in:
       val client = stubClient(
         geeklistResult = Right(List(GameId(10))),
-        gamesResult = Right(List(testGame(10, "Chess"))),
+        gamesResult = Right(List(testGame(10, "Chess")))
       )
       val worker = makeWorker(client)
 
@@ -61,7 +61,7 @@ class PrefetchWorkerSpec extends AnyWordSpec with Matchers with BeforeAndAfterEa
 
     "set status to NotFound when user does not exist" in:
       val client = stubClient(
-        collectionResult = Left(Fail.BggUserNotFound("nobody")),
+        collectionResult = Left(Fail.BggUserNotFound("nobody"))
       )
       val worker = makeWorker(client)
 
@@ -73,7 +73,7 @@ class PrefetchWorkerSpec extends AnyWordSpec with Matchers with BeforeAndAfterEa
 
     "set status to NotFound when geeklist does not exist" in:
       val client = stubClient(
-        geeklistResult = Left(Fail.BggListNotFound("999")),
+        geeklistResult = Left(Fail.BggListNotFound("999"))
       )
       val worker = makeWorker(client)
 
@@ -84,7 +84,7 @@ class PrefetchWorkerSpec extends AnyWordSpec with Matchers with BeforeAndAfterEa
 
     "set status to Failed on unexpected error" in:
       val client = stubClient(
-        collectionResult = Left(Fail.BggRateLimited("Too many requests")),
+        collectionResult = Left(Fail.BggRateLimited("Too many requests"))
       )
       val worker = makeWorker(client)
 
@@ -113,17 +113,27 @@ class PrefetchWorkerSpec extends AnyWordSpec with Matchers with BeforeAndAfterEa
       noException should be thrownBy worker.process(PrefetchMessage("invalid_type", "x"))
 
   private def testGame(id: Int, name: String): GameData = GameData(
-    id = GameId(id), name = name, yearPublished = Some(2020),
-    minPlayers = Some(2), maxPlayers = Some(4), minPlayingTime = Some(30), maxPlayingTime = Some(60),
-    playingTime = Some(60), ratingAverage = Some(7.5), ratingAverageWeight = Some(2.5),
-    expansion = false, mechanics = List("Hand Management"), categories = List("Fantasy"),
-    playerSuggestions = Nil, usersRated = Some(500),
+    id = GameId(id),
+    name = name,
+    yearPublished = Some(2020),
+    minPlayers = Some(2),
+    maxPlayers = Some(4),
+    minPlayingTime = Some(30),
+    maxPlayingTime = Some(60),
+    playingTime = Some(60),
+    ratingAverage = Some(7.5),
+    ratingAverageWeight = Some(2.5),
+    expansion = false,
+    mechanics = List("Hand Management"),
+    categories = List("Fantasy"),
+    playerSuggestions = Nil,
+    usersRated = Some(500)
   )
 
   private def stubClient(
       collectionResult: Either[Fail, List[GameId]] = Right(Nil),
       geeklistResult: Either[Fail, List[GameId]] = Right(Nil),
-      gamesResult: Either[Fail, List[GameData]] = Right(Nil),
+      gamesResult: Either[Fail, List[GameData]] = Right(Nil)
   ): BggClient = new BggClient:
     def fetchCollection(username: String): Either[Fail, List[GameId]] = collectionResult
     def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = geeklistResult

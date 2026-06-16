@@ -13,23 +13,25 @@ private[bggapi] object XmlParser:
   private def parseItem(item: Node): Option[GameData] =
     val idOpt = (item \ "@id").headOption.map(_.text.toInt)
     idOpt.map { id =>
-      val name          = (item \ "name").find(n => (n \ "@type").text == "primary")
-        .map(n => (n \ "@value").text).getOrElse("")
+      val name = (item \ "name")
+        .find(n => (n \ "@type").text == "primary")
+        .map(n => (n \ "@value").text)
+        .getOrElse("")
       val yearPublished = intAttr(item \ "yearpublished", "@value")
-      val minPlayers    = intAttr(item \ "minplayers", "@value")
-      val maxPlayers    = intAttr(item \ "maxplayers", "@value")
-      val minPlayTime   = intAttr(item \ "minplaytime", "@value")
-      val maxPlayTime   = intAttr(item \ "maxplaytime", "@value")
-      val playTime      = intAttr(item \ "playingtime", "@value")
-      val expansion     = (item \ "@type").text == "boardgameexpansion"
-      val mechanics     = attrValues(item \ "link", "boardgamemechanic")
-      val categories    = attrValues(item \ "link", "boardgamecategory")
-      val suggestions   = parsePollSuggestions(item)
+      val minPlayers = intAttr(item \ "minplayers", "@value")
+      val maxPlayers = intAttr(item \ "maxplayers", "@value")
+      val minPlayTime = intAttr(item \ "minplaytime", "@value")
+      val maxPlayTime = intAttr(item \ "maxplaytime", "@value")
+      val playTime = intAttr(item \ "playingtime", "@value")
+      val expansion = (item \ "@type").text == "boardgameexpansion"
+      val mechanics = attrValues(item \ "link", "boardgamemechanic")
+      val categories = attrValues(item \ "link", "boardgamecategory")
+      val suggestions = parsePollSuggestions(item)
 
-      val stats        = (item \ "statistics" \ "ratings").headOption
-      val ratingAvg    = stats.flatMap(s => doubleAttr(s \ "average", "@value"))
+      val stats = (item \ "statistics" \ "ratings").headOption
+      val ratingAvg = stats.flatMap(s => doubleAttr(s \ "average", "@value"))
       val ratingWeight = stats.flatMap(s => doubleAttr(s \ "averageweight", "@value"))
-      val usersRated   = stats.flatMap(s => intAttr(s \ "usersrated", "@value"))
+      val usersRated = stats.flatMap(s => intAttr(s \ "usersrated", "@value"))
 
       GameData(
         id = GameId(id),
@@ -46,7 +48,7 @@ private[bggapi] object XmlParser:
         mechanics = mechanics,
         categories = categories,
         playerSuggestions = suggestions,
-        usersRated = usersRated,
+        usersRated = usersRated
       )
     }
 
@@ -59,12 +61,15 @@ private[bggapi] object XmlParser:
         val countOpt = playerCount.toIntOption
         countOpt.map { count =>
           val votes = (results \ "result")
-          def votesFor(v: String) = votes.find(n => (n \ "@value").text == v).map(n => (n \ "@numvotes").text.toIntOption.getOrElse(0)).getOrElse(0)
+          def votesFor(v: String) = votes
+            .find(n => (n \ "@value").text == v)
+            .map(n => (n \ "@numvotes").text.toIntOption.getOrElse(0))
+            .getOrElse(0)
           PlayerSuggestion(
             numericPlayerCount = count,
-            best               = votesFor("Best"),
-            recommended        = votesFor("Recommended"),
-            notRecommended     = votesFor("Not Recommended"),
+            best = votesFor("Best"),
+            recommended = votesFor("Recommended"),
+            notRecommended = votesFor("Not Recommended")
           )
         }
       }
