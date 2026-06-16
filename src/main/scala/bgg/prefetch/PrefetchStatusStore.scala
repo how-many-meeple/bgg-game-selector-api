@@ -11,6 +11,14 @@ enum PrefetchStatus(val dbKey: String):
   case NotFound extends PrefetchStatus("not_found")
   case Failed extends PrefetchStatus("failed")
 
+object PrefetchStatus:
+  def fromDbKey(s: String): PrefetchStatus = s match
+    case "pending"    => Pending
+    case "processing" => Processing
+    case "completed"  => Completed
+    case "not_found"  => NotFound
+    case _            => Failed
+
 case class PrefetchRecord(
     sourceType: SourceType,
     sourceId: String,

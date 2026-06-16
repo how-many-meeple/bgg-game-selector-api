@@ -78,34 +78,29 @@ class ApiEndpoints(
     }
 
   // GET /collection/:username
-  val collectionEndpoint = baseEndpoint.get
-    .in("collection" / path[String]("username"))
-    .in(headers)
-    .out(jsonBody[List[Json]])
-    .handle { (username, hdrs) =>
-      checkPrefetchBlock(SourceType.Collection, username)
-        .getOrElse {
-          val filters = HeaderFilters.fromHeaders(hdrs)
-          gameService.resolveCollection(username).map { games =>
-            FieldReduction(GameFilter(games, filters), filters.fieldWhitelist)
-          }
-        }
-    }
+  val collectionEndpoint = gameListEndpoint("collection", SourceType.Collection, gameService.resolveCollection)
 
   // GET /geeklist/:id
-  val geeklistEndpoint = baseEndpoint.get
-    .in("geeklist" / path[String]("geekListId"))
-    .in(headers)
-    .out(jsonBody[List[Json]])
-    .handle { (listId, hdrs) =>
-      checkPrefetchBlock(SourceType.GeeKList, listId)
-        .getOrElse {
-          val filters = HeaderFilters.fromHeaders(hdrs)
-          gameService.resolveGeeklist(listId).map { games =>
-            FieldReduction(GameFilter(games, filters), filters.fieldWhitelist)
+  val geeklistEndpoint = gameListEndpoint("geeklist", SourceType.GeeKList, gameService.resolveGeeklist)
+
+  private def gameListEndpoint(
+      segment: String,
+      sourceType: SourceType,
+      resolve: String => Either[Fail, List[GameData]]
+  ) =
+    baseEndpoint.get
+      .in(segment / path[String]("id"))
+      .in(headers)
+      .out(jsonBody[List[Json]])
+      .handle { (id, hdrs) =>
+        checkPrefetchBlock(sourceType, id)
+          .getOrElse {
+            val filters = HeaderFilters.fromHeaders(hdrs)
+            resolve(id).map { games =>
+              FieldReduction(GameFilter(games, filters), filters.fieldWhitelist)
+            }
           }
-        }
-    }
+      }
 
   // GET /search/:query
   val searchEndpoint = baseEndpoint.get

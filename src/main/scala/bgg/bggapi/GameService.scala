@@ -36,9 +36,8 @@ class GameService(
     bggClient.searchGames(query)
 
   private def partitionCached(ids: List[GameId]): (List[GameData], List[GameId]) =
-    val (hits, misses) = ids.partition(id => gameCache.load(id).isDefined)
-    val hitData = hits.flatMap(gameCache.load)
-    (hitData, misses)
+    val (misses, cached) = ids.partitionMap(id => gameCache.load(id).toRight(id))
+    (cached, misses)
 
   private def cacheAndSync(game: GameData): Unit =
     gameCache.save(game)

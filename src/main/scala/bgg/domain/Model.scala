@@ -7,7 +7,9 @@ opaque type GameId = Int
 object GameId:
   def apply(value: Int): GameId = value
   def unapply(id: GameId): Some[Int] = Some(id)
-  extension (id: GameId) def value: Int = id
+  extension (id: GameId)
+    def value: Int = id
+    def asString: String = id.toString
   given Codec[GameId] = Codec.from(Decoder.decodeInt.map(GameId(_)), Encoder.encodeInt.contramap(_.value))
 
 opaque type GeekListId = String

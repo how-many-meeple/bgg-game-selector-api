@@ -13,11 +13,13 @@ import org.scalatest.BeforeAndAfterEach
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import sttp.client4.*
-import sttp.client4.testing.BackendStub
-import sttp.model.StatusCode
+import sttp.client4.testing.{BackendStub, ResponseStub, SyncBackendStub}
+import sttp.model.{Header as SttpHeader, StatusCode}
 import sttp.monad.IdentityMonad
 import sttp.shared.Identity
 import sttp.tapir.server.stub4.TapirStubInterpreter
+
+import java.util.Base64
 
 import java.nio.file.{Files, Paths}
 import java.time.Instant
@@ -418,3 +420,151 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
       response.code shouldBe StatusCode.Ok
       val json = parseJson(response.body).getOrElse(Json.Null)
       json.hcursor.get[Int]("total_dimensions").toOption shouldBe Some(155)
+
+  "GET /cors-proxy/:b64url" should:
+    def encodeUrl(url: String): String =
+      "_" + Base64.getUrlEncoder.withoutPadding.encodeToString(url.getBytes("UTF-8"))
+
+    def makeProxyEndpoints(httpStub: SyncBackendStub): ApiEndpoints =
+      val client = stubClient()
+      val gameService = GameService(client, gameCache, vectorStore, 50, () => Instant.now())
+      ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, NoOpSqsSender(), testConfig, httpStub)
+
+    "proxy a valid base64url-encoded https URL" in:
+      val targetUrl = "https://example.com/image.png"
+      val responseBody = Array[Byte](1, 2, 3, 4, 5)
+      val httpStub = SyncBackendStub
+        .whenRequestMatchesPartial { request =>
+          if request.uri.toString == targetUrl then
+            ResponseStub.adjust(responseBody, StatusCode.Ok, Seq(SttpHeader("content-type", "image/png")))
+          else ResponseStub.adjust(Array.empty[Byte], StatusCode.NotFound)
+        }
+
+      val endpoints = makeProxyEndpoints(httpStub)
+      val backend = makeBackend(endpoints)
+      val encoded = encodeUrl(targetUrl)
+      val response = basicRequest
+        .get(uri"http://test/cors-proxy/$encoded")
+        .response(asByteArrayAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.Ok
+      response.body shouldBe responseBody
+      response.header("Content-Type") shouldBe Some("image/png")
+      response.header("Cache-Control") shouldBe Some("public, max-age=31536000, immutable")
+
+    "proxy a valid base64url-encoded http URL" in:
+      val targetUrl = "http://example.com/data.json"
+      val responseBody = """{"key":"value"}""".getBytes("UTF-8")
+      val httpStub = SyncBackendStub
+        .whenRequestMatchesPartial { request =>
+          if request.uri.toString == targetUrl then
+            ResponseStub.adjust(responseBody, StatusCode.Ok, Seq(SttpHeader("content-type", "application/json")))
+          else ResponseStub.adjust(Array.empty[Byte], StatusCode.NotFound)
+        }
+
+      val endpoints = makeProxyEndpoints(httpStub)
+      val backend = makeBackend(endpoints)
+      val encoded = encodeUrl(targetUrl)
+      val response = basicRequest
+        .get(uri"http://test/cors-proxy/$encoded")
+        .response(asByteArrayAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.Ok
+      response.body shouldBe responseBody
+      response.header("Content-Type") shouldBe Some("application/json")
+
+    "return 400 for invalid base64 input" in:
+      val httpStub = SyncBackendStub
+      val endpoints = makeProxyEndpoints(httpStub)
+      val backend = makeBackend(endpoints)
+      val response = basicRequest
+        .get(uri"http://test/cors-proxy/_!!!not-valid-base64!!!")
+        .response(asStringAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.BadRequest
+      val json = parseJson(response.body).getOrElse(Json.Null)
+      json.hcursor.get[String]("error").toOption.get should include("Unable to decode")
+
+    "return 400 when decoded string is not a URL" in:
+      val notAUrl = "not-a-url"
+      val encoded = "_" + Base64.getUrlEncoder.withoutPadding.encodeToString(notAUrl.getBytes("UTF-8"))
+      val httpStub = SyncBackendStub
+      val endpoints = makeProxyEndpoints(httpStub)
+      val backend = makeBackend(endpoints)
+      val response = basicRequest
+        .get(uri"http://test/cors-proxy/$encoded")
+        .response(asStringAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.BadRequest
+      val json = parseJson(response.body).getOrElse(Json.Null)
+      json.hcursor.get[String]("error").toOption.get should include("Not a valid URL")
+
+    "handle URL that requires base64url padding correctly" in:
+      val targetUrl = "https://x.co/a"
+      val responseBody = Array[Byte](10, 20, 30)
+      val httpStub = SyncBackendStub
+        .whenRequestMatchesPartial { request =>
+          if request.uri.toString == targetUrl then
+            ResponseStub.adjust(
+              responseBody,
+              StatusCode.Ok,
+              Seq(SttpHeader("content-type", "application/octet-stream"))
+            )
+          else ResponseStub.adjust(Array.empty[Byte], StatusCode.NotFound)
+        }
+
+      val endpoints = makeProxyEndpoints(httpStub)
+      val backend = makeBackend(endpoints)
+      val encoded = encodeUrl(targetUrl)
+      val response = basicRequest
+        .get(uri"http://test/cors-proxy/$encoded")
+        .response(asByteArrayAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.Ok
+      response.body shouldBe responseBody
+
+    "handle URL with characters that differ between base64 and base64url" in:
+      val targetUrl = "https://example.com/path?foo=bar&baz=qux+quux"
+      val responseBody = Array[Byte](99)
+      val httpStub = SyncBackendStub
+        .whenRequestMatchesPartial { request =>
+          if request.uri.toString == targetUrl then
+            ResponseStub.adjust(responseBody, StatusCode.Ok, Seq(SttpHeader("content-type", "text/plain")))
+          else ResponseStub.adjust(Array.empty[Byte], StatusCode.NotFound)
+        }
+
+      val endpoints = makeProxyEndpoints(httpStub)
+      val backend = makeBackend(endpoints)
+      val encoded = encodeUrl(targetUrl)
+      val response = basicRequest
+        .get(uri"http://test/cors-proxy/$encoded")
+        .response(asByteArrayAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.Ok
+      response.body shouldBe responseBody
+
+    "use application/octet-stream when upstream has no content-type" in:
+      val targetUrl = "https://example.com/no-content-type"
+      val responseBody = Array[Byte](0, 1)
+      val httpStub = SyncBackendStub
+        .whenRequestMatchesPartial { request =>
+          if request.uri.toString == targetUrl then ResponseStub.adjust(responseBody, StatusCode.Ok)
+          else ResponseStub.adjust(Array.empty[Byte], StatusCode.NotFound)
+        }
+
+      val endpoints = makeProxyEndpoints(httpStub)
+      val backend = makeBackend(endpoints)
+      val encoded = encodeUrl(targetUrl)
+      val response = basicRequest
+        .get(uri"http://test/cors-proxy/$encoded")
+        .response(asByteArrayAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.Ok
+      response.header("Content-Type") shouldBe Some("application/octet-stream")
