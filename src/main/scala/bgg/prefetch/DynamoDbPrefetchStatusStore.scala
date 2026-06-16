@@ -15,20 +15,21 @@ class DynamoDbPrefetchStatusStore(client: DynamoDbClient, tableName: String)
   def get(sourceType: SourceType, sourceId: String): Option[PrefetchRecord] =
     try
       val response = client.getItem(
-        GetItemRequest.builder()
+        GetItemRequest
+          .builder()
           .tableName(tableName)
           .key(Map("id" -> AttributeValue.fromS(statusKey(sourceType, sourceId))).asJava)
           .build()
       )
       if response.hasItem then
-        val item      = response.item()
+        val item = response.item()
         val expiresAt = Instant.ofEpochSecond(item.get("ttl").n().toLong)
-        val record    = PrefetchRecord(
+        val record = PrefetchRecord(
           sourceType = SourceType.fromString(item.get("source_type").s()).getOrElse(sourceType),
-          sourceId   = item.get("source_id").s(),
-          status     = parseStatus(item.get("status").s()),
-          reason     = Option(item.get("reason")).map(_.s()).getOrElse(""),
-          expiresAt  = expiresAt,
+          sourceId = item.get("source_id").s(),
+          status = parseStatus(item.get("status").s()),
+          reason = Option(item.get("reason")).map(_.s()).getOrElse(""),
+          expiresAt = expiresAt
         )
         Option.when(!record.isExpired)(record)
       else None
@@ -39,12 +40,12 @@ class DynamoDbPrefetchStatusStore(client: DynamoDbClient, tableName: String)
 
   def set(sourceType: SourceType, sourceId: String, status: PrefetchStatus, reason: String = ""): Unit =
     val item = Map(
-      "id"          -> AttributeValue.fromS(statusKey(sourceType, sourceId)),
+      "id" -> AttributeValue.fromS(statusKey(sourceType, sourceId)),
       "source_type" -> AttributeValue.fromS(sourceType.toPathSegment),
-      "source_id"   -> AttributeValue.fromS(sourceId),
-      "status"      -> AttributeValue.fromS(status.dbKey),
-      "reason"      -> AttributeValue.fromS(reason),
-      "ttl"         -> AttributeValue.fromN(PrefetchTtl.expiresAt(status).getEpochSecond.toString),
+      "source_id" -> AttributeValue.fromS(sourceId),
+      "status" -> AttributeValue.fromS(status.dbKey),
+      "reason" -> AttributeValue.fromS(reason),
+      "ttl" -> AttributeValue.fromN(PrefetchTtl.expiresAt(status).getEpochSecond.toString)
     ).asJava
 
     try client.putItem(PutItemRequest.builder().tableName(tableName).item(item).build()): Unit

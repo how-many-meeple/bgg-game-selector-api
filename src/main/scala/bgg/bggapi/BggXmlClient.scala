@@ -11,10 +11,10 @@ import scala.xml.{Elem, XML}
 
 class BggXmlClient(config: BggConfig, backend: SyncBackend) extends BggClient with StrictLogging:
 
-  private val ApiV2Base         = "https://boardgamegeek.com/xmlapi2"
-  private val ApiV1Base         = "https://boardgamegeek.com/xmlapi"
-  private val ThingBatchSize    = 20
-  private val MinSearchLength   = 3
+  private val ApiV2Base = "https://boardgamegeek.com/xmlapi2"
+  private val ApiV1Base = "https://boardgamegeek.com/xmlapi"
+  private val ThingBatchSize = 20
+  private val MinSearchLength = 3
   private val SearchResultLimit = 20
 
   private def authHeaders: Map[String, String] =
@@ -54,7 +54,7 @@ class BggXmlClient(config: BggConfig, backend: SyncBackend) extends BggClient wi
       .flatMap { batch =>
         val idStr = batch.map(_.value).mkString(",")
         getWithRetry(s"$ApiV2Base/thing", Map("id" -> idStr, "stats" -> "1")) match
-          case Left(e)    =>
+          case Left(e) =>
             logger.error(s"Failed to fetch batch $idStr: $e")
             Nil
           case Right(xml) => XmlParser.parseThings(xml)
@@ -62,7 +62,10 @@ class BggXmlClient(config: BggConfig, backend: SyncBackend) extends BggClient wi
     Right(results)
 
   def fetchCollection(username: String): Either[Fail, List[GameId]] =
-    getWithRetry(s"$ApiV2Base/collection", Map("username" -> username, "own" -> "1", "excludesubtype" -> "boardgameexpansion"))
+    getWithRetry(
+      s"$ApiV2Base/collection",
+      Map("username" -> username, "own" -> "1", "excludesubtype" -> "boardgameexpansion")
+    )
       .flatMap { xml =>
         val items = (xml \ "item")
         if items.isEmpty then Left(Fail.BggUserNotFound(username))

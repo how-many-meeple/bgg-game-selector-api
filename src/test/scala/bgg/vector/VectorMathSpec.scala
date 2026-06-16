@@ -13,14 +13,23 @@ class VectorMathSpec extends AnyWordSpec with Matchers:
       playingTime: Int = 0,
       minPlayers: Int = 1,
       maxPlayers: Int = 1,
-      rating: Double = 0.0,
+      rating: Double = 0.0
   ): GameData = GameData(
-    id = GameId(1), name = "Test", yearPublished = None,
-    minPlayers = Some(minPlayers), maxPlayers = Some(maxPlayers),
-    minPlayingTime = None, maxPlayingTime = Some(playingTime), playingTime = Some(playingTime),
-    ratingAverage = Some(rating), ratingAverageWeight = Some(complexity),
-    expansion = false, mechanics = mechanics, categories = categories,
-    playerSuggestions = Nil, usersRated = Some(100),
+    id = GameId(1),
+    name = "Test",
+    yearPublished = None,
+    minPlayers = Some(minPlayers),
+    maxPlayers = Some(maxPlayers),
+    minPlayingTime = None,
+    maxPlayingTime = Some(playingTime),
+    playingTime = Some(playingTime),
+    ratingAverage = Some(rating),
+    ratingAverageWeight = Some(complexity),
+    expansion = false,
+    mechanics = mechanics,
+    categories = categories,
+    playerSuggestions = Nil,
+    usersRated = Some(100)
   )
 
   "generateGameVector" should:
@@ -34,7 +43,7 @@ class VectorMathSpec extends AnyWordSpec with Matchers:
       magnitude shouldBe 1.0 +- 1e-9
 
     "encode a known mechanic at index 0" in:
-      val withMechanic    = VectorMath.generateGameVector(gameWith(mechanics = List("Hand Management")))
+      val withMechanic = VectorMath.generateGameVector(gameWith(mechanics = List("Hand Management")))
       val withoutMechanic = VectorMath.generateGameVector(gameWith())
       // After normalisation the absolute value shifts, but the dimension should be non-zero
       withMechanic.values(0) should be > withoutMechanic.values(0)
@@ -47,12 +56,12 @@ class VectorMathSpec extends AnyWordSpec with Matchers:
 
     "produce a higher playtime dimension for longer games" in:
       val short = VectorMath.generateGameVector(gameWith(mechanics = List("Hand Management"), playingTime = 30))
-      val long  = VectorMath.generateGameVector(gameWith(mechanics = List("Hand Management"), playingTime = 200))
+      val long = VectorMath.generateGameVector(gameWith(mechanics = List("Hand Management"), playingTime = 200))
       val ptIdx = MechanicVocabulary.size + CategoryVocabulary.size + 1
       long.values(ptIdx) should be > short.values(ptIdx)
 
     "set cooperative flag for cooperative game mechanic" in:
-      val coop       = VectorMath.generateGameVector(gameWith(mechanics = List("Cooperative Game")))
+      val coop = VectorMath.generateGameVector(gameWith(mechanics = List("Cooperative Game")))
       val competitive = VectorMath.generateGameVector(gameWith(mechanics = List("Auction/Bidding")))
       coop.values.last should be > 0.0
       competitive.values.last shouldBe 0.0
@@ -100,8 +109,14 @@ class VectorMathSpec extends AnyWordSpec with Matchers:
       VectorMath.buildTasteVector(games).dimensions shouldBe VectorDimensions
 
     "give heavier taste vector to heavier game collection" in:
-      val light = List(gameWith(mechanics = List("Hand Management"), complexity = 1.0), gameWith(mechanics = List("Hand Management"), complexity = 1.0))
-      val heavy = List(gameWith(mechanics = List("Hand Management"), complexity = 4.0), gameWith(mechanics = List("Hand Management"), complexity = 4.0))
+      val light = List(
+        gameWith(mechanics = List("Hand Management"), complexity = 1.0),
+        gameWith(mechanics = List("Hand Management"), complexity = 1.0)
+      )
+      val heavy = List(
+        gameWith(mechanics = List("Hand Management"), complexity = 4.0),
+        gameWith(mechanics = List("Hand Management"), complexity = 4.0)
+      )
       val weightIdx = MechanicVocabulary.size + CategoryVocabulary.size
       VectorMath.buildTasteVector(heavy).values(weightIdx) should be >
         VectorMath.buildTasteVector(light).values(weightIdx)

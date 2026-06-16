@@ -62,7 +62,7 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
       sqliteRequestCachePath = "",
       sqliteGameCachePath = "",
       sqliteVectorStorePath = "",
-      sqlitePrefetchStatusPath = "",
+      sqlitePrefetchStatusPath = ""
     ),
     aws = AwsConfig(
       region = "us-east-1",
@@ -70,23 +70,33 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
       dynamoGameTable = "",
       dynamoVectorTable = "",
       dynamoPrefetchTable = "",
-      prefetchSqsUrl = "",
+      prefetchSqsUrl = ""
     ),
-    server = ServerConfig(host = "0.0.0.0", port = 8080, allowedOrigins = List("*")),
+    server = ServerConfig(host = "0.0.0.0", port = 8080, allowedOrigins = List("*"))
   )
 
   private def testGame(id: Int, name: String): GameData = GameData(
-    id = GameId(id), name = name, yearPublished = Some(2020),
-    minPlayers = Some(2), maxPlayers = Some(4), minPlayingTime = Some(30), maxPlayingTime = Some(60),
-    playingTime = Some(60), ratingAverage = Some(7.5), ratingAverageWeight = Some(2.5),
-    expansion = false, mechanics = List("Hand Management"), categories = List("Fantasy"),
-    playerSuggestions = Nil, usersRated = Some(500),
+    id = GameId(id),
+    name = name,
+    yearPublished = Some(2020),
+    minPlayers = Some(2),
+    maxPlayers = Some(4),
+    minPlayingTime = Some(30),
+    maxPlayingTime = Some(60),
+    playingTime = Some(60),
+    ratingAverage = Some(7.5),
+    ratingAverageWeight = Some(2.5),
+    expansion = false,
+    mechanics = List("Hand Management"),
+    categories = List("Fantasy"),
+    playerSuggestions = Nil,
+    usersRated = Some(500)
   )
 
   private def stubClient(
       collectionResult: Either[Fail, List[GameId]] = Right(Nil),
       geeklistResult: Either[Fail, List[GameId]] = Right(Nil),
-      gamesResult: Either[Fail, List[GameData]] = Right(Nil),
+      gamesResult: Either[Fail, List[GameData]] = Right(Nil)
   ): BggClient = new BggClient:
     def fetchCollection(username: String): Either[Fail, List[GameId]] = collectionResult
     def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = geeklistResult
@@ -111,7 +121,7 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
       val games = List(testGame(1, "Catan"), testGame(2, "Pandemic"))
       val client = stubClient(
         collectionResult = Right(List(GameId(1), GameId(2))),
-        gamesResult = Right(games),
+        gamesResult = Right(games)
       )
       val endpoints = makeEndpoints(client)
       val backend = makeBackend(endpoints)
@@ -171,7 +181,12 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
       response.code shouldBe StatusCode.Accepted
 
     "return 404 when prefetch result is not_found" in:
-      prefetchStore.set(SourceType.Collection, "missinguser", PrefetchStatus.NotFound, "No user found called 'missinguser'")
+      prefetchStore.set(
+        SourceType.Collection,
+        "missinguser",
+        PrefetchStatus.NotFound,
+        "No user found called 'missinguser'"
+      )
       val endpoints = makeEndpoints(stubClient())
       val backend = makeBackend(endpoints)
       val response = basicRequest
@@ -200,7 +215,7 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
       prefetchStore.set(SourceType.Collection, "testuser", PrefetchStatus.Completed)
       val client = stubClient(
         collectionResult = Right(List(GameId(1))),
-        gamesResult = Right(List(testGame(1, "Catan"))),
+        gamesResult = Right(List(testGame(1, "Catan")))
       )
       val endpoints = makeEndpoints(client)
       val backend = makeBackend(endpoints)
@@ -215,7 +230,7 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
     "return 200 with games on success" in:
       val client = stubClient(
         geeklistResult = Right(List(GameId(10))),
-        gamesResult = Right(List(testGame(10, "Chess"))),
+        gamesResult = Right(List(testGame(10, "Chess")))
       )
       val endpoints = makeEndpoints(client)
       val backend = makeBackend(endpoints)

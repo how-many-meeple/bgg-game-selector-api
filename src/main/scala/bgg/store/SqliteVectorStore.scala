@@ -29,7 +29,7 @@ class SqliteVectorStore(dbPath: String) extends VectorStore with AutoCloseable w
 
   def save(sv: StoredVector): Unit =
     val sql = "INSERT OR REPLACE INTO game_vectors (game_id, name, vector, updated_at) VALUES (?,?,?,?)"
-    val ps  = conn.prepareStatement(sql)
+    val ps = conn.prepareStatement(sql)
     ps.setInt(1, sv.gameId.value)
     ps.setString(2, sv.name)
     ps.setString(3, sv.vector.values.asJson.noSpaces)
@@ -39,7 +39,7 @@ class SqliteVectorStore(dbPath: String) extends VectorStore with AutoCloseable w
 
   def load(id: GameId): Option[StoredVector] =
     val sql = "SELECT game_id, name, vector, updated_at FROM game_vectors WHERE game_id=?"
-    val ps  = conn.prepareStatement(sql)
+    val ps = conn.prepareStatement(sql)
     ps.setInt(1, id.value)
     val rs = ps.executeQuery()
     val result = if rs.next() then rowToStoredVector(rs) else None
@@ -49,8 +49,8 @@ class SqliteVectorStore(dbPath: String) extends VectorStore with AutoCloseable w
 
   def loadAll(): List[StoredVector] =
     val sql = "SELECT game_id, name, vector, updated_at FROM game_vectors"
-    val ps  = conn.prepareStatement(sql)
-    val rs  = ps.executeQuery()
+    val ps = conn.prepareStatement(sql)
+    val rs = ps.executeQuery()
     val results = Iterator.continually(rs).takeWhile(_.next()).flatMap(rowToStoredVector).toList
     rs.close()
     ps.close()
@@ -62,9 +62,11 @@ class SqliteVectorStore(dbPath: String) extends VectorStore with AutoCloseable w
         logger.error(s"Failed to decode vector for game ${rs.getInt(1)}", e)
         None
       case Right(vec) =>
-        Some(StoredVector(
-          gameId    = GameId(rs.getInt(1)),
-          name      = rs.getString(2),
-          vector    = GameVector(vec),
-          updatedAt = Instant.parse(rs.getString(4)),
-        ))
+        Some(
+          StoredVector(
+            gameId = GameId(rs.getInt(1)),
+            name = rs.getString(2),
+            vector = GameVector(vec),
+            updatedAt = Instant.parse(rs.getString(4))
+          )
+        )

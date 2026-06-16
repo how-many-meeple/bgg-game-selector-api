@@ -27,18 +27,18 @@ class SqlitePrefetchStatusStore(dbPath: String) extends PrefetchStatusStore with
 
   def get(sourceType: SourceType, sourceId: String): Option[PrefetchRecord] =
     val sql = "SELECT source_type, source_id, status, reason, expires_at FROM prefetch_status WHERE id=?"
-    val ps  = conn.prepareStatement(sql)
+    val ps = conn.prepareStatement(sql)
     ps.setString(1, statusKey(sourceType, sourceId))
     val rs = ps.executeQuery()
     val result =
       if rs.next() then
         val expiresAt = Instant.ofEpochSecond(rs.getLong(5))
-        val record    = PrefetchRecord(
+        val record = PrefetchRecord(
           sourceType = SourceType.fromString(rs.getString(1)).getOrElse(sourceType),
-          sourceId   = rs.getString(2),
-          status     = parseStatus(rs.getString(3)),
-          reason     = rs.getString(4),
-          expiresAt  = expiresAt,
+          sourceId = rs.getString(2),
+          status = parseStatus(rs.getString(3)),
+          reason = rs.getString(4),
+          expiresAt = expiresAt
         )
         Option.when(!record.isExpired)(record)
       else None

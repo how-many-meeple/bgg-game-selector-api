@@ -27,24 +27,26 @@ class ApiLambdaHandler extends SyncLambdaHandler[AwsRequestV1](AwsSyncServerOpti
 object ApiLambdaHandler:
 
   private def buildEndpoints(): ApiEndpoints =
-    val config      = AppConfig.load()
+    val config = AppConfig.load()
     val httpBackend = DefaultSyncBackend()
-    val bggClient   = BggXmlClient(config.bgg, httpBackend)
+    val bggClient = BggXmlClient(config.bgg, httpBackend)
 
-    val dynamo = DynamoDbClient.builder()
+    val dynamo = DynamoDbClient
+      .builder()
       .region(Region.of(config.aws.region))
       .httpClient(UrlConnectionHttpClient.create())
       .build()
 
-    val sqs = SqsClient.builder()
+    val sqs = SqsClient
+      .builder()
       .region(Region.of(config.aws.region))
       .httpClient(UrlConnectionHttpClient.create())
       .build()
 
-    val gameCache     = DynamoDbGameCache(dynamo, config.aws.dynamoGameTable, config.cache.gameCacheTtlSeconds)
-    val vectorStore   = DynamoDbVectorStore(dynamo, config.aws.dynamoVectorTable)
+    val gameCache = DynamoDbGameCache(dynamo, config.aws.dynamoGameTable, config.cache.gameCacheTtlSeconds)
+    val vectorStore = DynamoDbVectorStore(dynamo, config.aws.dynamoVectorTable)
     val prefetchStore = DynamoDbPrefetchStatusStore(dynamo, config.aws.dynamoPrefetchTable)
-    val sqsSender     = AwsSqsSender(sqs, config.aws.prefetchSqsUrl)
-    val gameService   = GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
+    val sqsSender = AwsSqsSender(sqs, config.aws.prefetchSqsUrl)
+    val gameService = GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
 
     ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, sqsSender, config)

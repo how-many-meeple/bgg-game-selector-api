@@ -38,14 +38,14 @@ class SqliteGameCache(dbPath: String, ttlSeconds: Int) extends GameCache with Au
 
   def load(id: GameId): Option[GameData] =
     val sql = "SELECT data FROM cached_game WHERE id=?"
-    val ps  = conn.prepareStatement(sql)
+    val ps = conn.prepareStatement(sql)
     ps.setString(1, id.value.toString)
     val rs = ps.executeQuery()
     val result =
       if rs.next() then
         decode[GameData](rs.getString(1)) match
           case Right(g) => Some(g)
-          case Left(e)  =>
+          case Left(e) =>
             logger.error(s"Failed to decode game $id from cache: $e")
             None
       else None
@@ -55,8 +55,8 @@ class SqliteGameCache(dbPath: String, ttlSeconds: Int) extends GameCache with Au
 
   def evictExpired(): Unit =
     val cutoff = Instant.now().getEpochSecond - ttlSeconds
-    val sql    = "DELETE FROM cached_game WHERE cache_timestamp < ?"
-    val ps     = conn.prepareStatement(sql)
+    val sql = "DELETE FROM cached_game WHERE cache_timestamp < ?"
+    val ps = conn.prepareStatement(sql)
     ps.setLong(1, cutoff)
     val deleted = ps.executeUpdate()
     ps.close()

@@ -25,7 +25,7 @@ object PrefetchMessage:
 
 class PrefetchWorkerLogic(
     gameService: GameService,
-    prefetchStore: PrefetchStatusStore,
+    prefetchStore: PrefetchStatusStore
 ) extends StrictLogging:
 
   def process(msg: PrefetchMessage): Unit =
@@ -77,21 +77,24 @@ class PrefetchWorker extends RequestHandler[SQSEvent, Unit] with StrictLogging:
 
     val (gameService, prefetchStore) = config.cache.backend match
       case CacheBackend.DynamoDB =>
-        val dynamo = DynamoDbClient.builder()
+        val dynamo = DynamoDbClient
+          .builder()
           .region(Region.of(config.aws.region))
           .httpClient(UrlConnectionHttpClient.create())
           .build()
         val gameCache = DynamoDbGameCache(dynamo, config.aws.dynamoGameTable, config.cache.gameCacheTtlSeconds)
         val vectorStore = DynamoDbVectorStore(dynamo, config.aws.dynamoVectorTable)
         val prefetchStore = DynamoDbPrefetchStatusStore(dynamo, config.aws.dynamoPrefetchTable)
-        val gameService = GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
+        val gameService =
+          GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
         (gameService, prefetchStore)
 
       case _ =>
         val gameCache = SqliteGameCache(config.cache.sqliteGameCachePath, config.cache.gameCacheTtlSeconds)
         val vectorStore = SqliteVectorStore(config.cache.sqliteVectorStorePath)
         val prefetchStore = SqlitePrefetchStatusStore(config.cache.sqlitePrefetchStatusPath)
-        val gameService = GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
+        val gameService =
+          GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
         (gameService, prefetchStore)
 
     PrefetchWorkerLogic(gameService, prefetchStore)

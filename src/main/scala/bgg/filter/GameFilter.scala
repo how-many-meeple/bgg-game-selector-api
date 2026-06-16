@@ -12,14 +12,16 @@ private[filter] class FilterChain(filters: List[GameFilter]) extends GameFilter:
 
 object GameFilter:
   def fromFilters(f: GameFilters): GameFilter =
-    FilterChain(List(
-      ExpansionsFilter(f.includeExpansions),
-      PlayersFilter(f.playerCount, f.useRecommendedPlayers),
-      DurationFilter(f.minDuration, f.maxDuration),
-      ComplexityFilter(f.complexity),
-      MechanicsFilter(f.mechanics),
-      RatingFilter(f.minRating),
-    ))
+    FilterChain(
+      List(
+        ExpansionsFilter(f.includeExpansions),
+        PlayersFilter(f.playerCount, f.useRecommendedPlayers),
+        DurationFilter(f.minDuration, f.maxDuration),
+        ComplexityFilter(f.complexity),
+        MechanicsFilter(f.mechanics),
+        RatingFilter(f.minRating)
+      )
+    )
 
   def apply(games: List[GameData], f: GameFilters): List[GameData] =
     val filter = fromFilters(f)
@@ -31,14 +33,14 @@ private[filter] case class ExpansionsFilter(includeExpansions: Boolean) extends 
 
 private[filter] case class PlayersFilter(
     playerCount: Option[Int],
-    useRecommended: Boolean,
+    useRecommended: Boolean
 ) extends GameFilter:
   private val DefaultMinPlayers = 1
   private val DefaultMaxPlayers = 99
 
   def excludes(game: GameData): Boolean =
     playerCount match
-      case None    => false
+      case None => false
       case Some(n) =>
         val (minP, maxP) =
           if useRecommended then
@@ -56,7 +58,7 @@ private[filter] case class PlayersFilter(
 
 private[filter] case class DurationFilter(
     minDuration: Option[Int],
-    maxDuration: Option[Int],
+    maxDuration: Option[Int]
 ) extends GameFilter:
   def excludes(game: GameData): Boolean =
     val min = game.minPlayingTime.getOrElse(0)
@@ -68,7 +70,7 @@ private[filter] case class ComplexityFilter(complexity: Option[Double]) extends 
 
   def excludes(game: GameData): Boolean =
     complexity match
-      case None    => false
+      case None => false
       case Some(c) =>
         game.ratingAverageWeight match
           case None    => true
@@ -78,7 +80,7 @@ private[filter] case class MechanicsFilter(requiredMechanics: List[String]) exte
   def excludes(game: GameData): Boolean =
     if requiredMechanics.isEmpty then false
     else
-      val gameMechanics   = game.mechanics.map(normalise).toSet
+      val gameMechanics = game.mechanics.map(normalise).toSet
       val requestedNormal = requiredMechanics.map(normalise).toSet
       (gameMechanics & requestedNormal).isEmpty
 

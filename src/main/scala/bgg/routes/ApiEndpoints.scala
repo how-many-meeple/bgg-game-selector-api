@@ -36,7 +36,7 @@ object RecommendRequest:
 case class RecommendResponse(
     recommendations: List[RecommendedGameJson],
     inputGamesCount: Int,
-    tasteVectorDimensions: Int,
+    tasteVectorDimensions: Int
 )
 object RecommendResponse:
   given Codec[RecommendResponse] = deriveCodec
@@ -56,7 +56,7 @@ class ApiEndpoints(
     prefetchStore: PrefetchStatusStore,
     sqsSender: SqsSender,
     config: AppConfig,
-    httpBackend: sttp.client4.SyncBackend = sttp.client4.DefaultSyncBackend(),
+    httpBackend: sttp.client4.SyncBackend = sttp.client4.DefaultSyncBackend()
 ) extends StrictLogging:
 
   import ErrorOutput.*
@@ -69,10 +69,12 @@ class ApiEndpoints(
     .in("health")
     .out(jsonBody[Json])
     .handle { _ =>
-      Right(Json.obj(
-        "status"        -> Json.fromString("ok"),
-        "cache_backend" -> Json.fromString(config.cache.backend.toString.toLowerCase),
-      ))
+      Right(
+        Json.obj(
+          "status" -> Json.fromString("ok"),
+          "cache_backend" -> Json.fromString(config.cache.backend.toString.toLowerCase)
+        )
+      )
     }
 
   // GET /collection/:username
@@ -120,7 +122,7 @@ class ApiEndpoints(
     .out(statusCode and jsonBody[PrefetchResponse])
     .handle { req =>
       SourceType.fromString(req.sourceType) match
-        case Left(e)           => Left(Fail.IncorrectInput(e))
+        case Left(e) => Left(Fail.IncorrectInput(e))
         case Right(sourceType) =>
           val sourceId = req.sourceId.trim
           if sourceId.isEmpty then Left(Fail.IncorrectInput("source_id must not be empty"))
@@ -139,18 +141,20 @@ class ApiEndpoints(
     .out(jsonBody[Json])
     .handle { (sourceTypeStr, sourceId) =>
       SourceType.fromString(sourceTypeStr) match
-        case Left(e)           => Left(Fail.IncorrectInput(e))
+        case Left(e) => Left(Fail.IncorrectInput(e))
         case Right(sourceType) =>
           prefetchStore.get(sourceType, sourceId) match
             case None =>
               Left(Fail.NotFound(s"No prefetch run found for $sourceTypeStr/$sourceId"))
             case Some(record) =>
-              Right(Json.obj(
-                "source_type" -> Json.fromString(sourceTypeStr),
-                "source_id"   -> Json.fromString(sourceId),
-                "status"      -> Json.fromString(record.status.dbKey),
-                "reason"      -> Json.fromString(record.reason),
-              ))
+              Right(
+                Json.obj(
+                  "source_type" -> Json.fromString(sourceTypeStr),
+                  "source_id" -> Json.fromString(sourceId),
+                  "status" -> Json.fromString(record.status.dbKey),
+                  "reason" -> Json.fromString(record.reason)
+                )
+              )
     }
 
   // POST /recommendations/from-games
@@ -160,28 +164,36 @@ class ApiEndpoints(
     .in(headers)
     .out(jsonBody[RecommendResponse])
     .handle { (req, hdrs) =>
-      val gameIds   = req.gameIds.map(GameId(_))
-      val limit     = req.limit.getOrElse(DefaultRecommendationLimit)
+      val gameIds = req.gameIds.map(GameId(_))
+      val limit = req.limit.getOrElse(DefaultRecommendationLimit)
       val excludeIds = req.excludeIds.getOrElse(Nil).map(GameId(_)).toSet ++ gameIds.toSet
-      val filters   = HeaderFilters.fromHeaders(hdrs)
+      val filters = HeaderFilters.fromHeaders(hdrs)
 
       val games = gameIds.flatMap(id => gameCache.load(id).toList)
       if games.isEmpty then Left(Fail.NotFound("None of the provided game IDs were found in cache"))
       else
-        val tasteVector    = VectorMath.buildTasteVector(games)
+        val tasteVector = VectorMath.buildTasteVector(games)
         val recommendations = RecommendationEngine.recommend(
-          tasteVector  = tasteVector,
-          vectorStore  = vectorStore,
-          gameCache    = gameCache,
-          limit        = limit,
-          excludeIds   = excludeIds,
-          filters      = filters,
+          tasteVector = tasteVector,
+          vectorStore = vectorStore,
+          gameCache = gameCache,
+          limit = limit,
+          excludeIds = excludeIds,
+          filters = filters
         )
-        Right(RecommendResponse(
-          recommendations       = recommendations.map(r => RecommendedGameJson(r.gameId.value, r.name, math.round(r.similarityScore * ScorePrecision) / ScorePrecision)),
-          inputGamesCount       = games.size,
-          tasteVectorDimensions = VectorDimensions,
-        ))
+        Right(
+          RecommendResponse(
+            recommendations = recommendations.map(r =>
+              RecommendedGameJson(
+                r.gameId.value,
+                r.name,
+                math.round(r.similarityScore * ScorePrecision) / ScorePrecision
+              )
+            ),
+            inputGamesCount = games.size,
+            tasteVectorDimensions = VectorDimensions
+          )
+        )
     }
 
   // GET /recommendations/schema
@@ -189,19 +201,21 @@ class ApiEndpoints(
     .in("recommendations" / "schema")
     .out(jsonBody[Json])
     .handle { _ =>
-      Right(Json.obj(
-        "total_dimensions" -> Json.fromInt(VectorDimensions),
-        "mechanics"        -> Json.obj(
-          "start_index" -> Json.fromInt(0),
-          "count"       -> Json.fromInt(MechanicVocabulary.size),
-          "vocabulary"  -> MechanicVocabulary.asJson,
-        ),
-        "categories"       -> Json.obj(
-          "start_index" -> Json.fromInt(MechanicVocabulary.size),
-          "count"       -> Json.fromInt(CategoryVocabulary.size),
-          "vocabulary"  -> CategoryVocabulary.asJson,
-        ),
-      ))
+      Right(
+        Json.obj(
+          "total_dimensions" -> Json.fromInt(VectorDimensions),
+          "mechanics" -> Json.obj(
+            "start_index" -> Json.fromInt(0),
+            "count" -> Json.fromInt(MechanicVocabulary.size),
+            "vocabulary" -> MechanicVocabulary.asJson
+          ),
+          "categories" -> Json.obj(
+            "start_index" -> Json.fromInt(MechanicVocabulary.size),
+            "count" -> Json.fromInt(CategoryVocabulary.size),
+            "vocabulary" -> CategoryVocabulary.asJson
+          )
+        )
+      )
     }
 
   // GET /cors-proxy/:b64url
@@ -212,16 +226,21 @@ class ApiEndpoints(
     .out(header[String]("Cache-Control"))
     .handle { b64url =>
       decodeProxyUrl(b64url) match
-        case Left(e)    => Left(Fail.IncorrectInput(e))
+        case Left(e) => Left(Fail.IncorrectInput(e))
         case Right(url) =>
           try
             val response = sttp.client4.quick.quickRequest
               .get(sttp.model.Uri.unsafeParse(url))
               .response(sttp.client4.asByteArrayAlways)
               .send(httpBackend)
-            Right((response.body, response.headers.find(_.name == "content-type").map(_.value).getOrElse("application/octet-stream"), ImmutableCacheControl))
-          catch
-            case e: Exception => Left(Fail.IncorrectInput(s"Proxy request failed: ${e.getMessage}"))
+            Right(
+              (
+                response.body,
+                response.headers.find(_.name == "content-type").map(_.value).getOrElse("application/octet-stream"),
+                ImmutableCacheControl
+              )
+            )
+          catch case e: Exception => Left(Fail.IncorrectInput(s"Proxy request failed: ${e.getMessage}"))
     }
 
   // Checks if a prefetch result blocks the main collection/geeklist request.
@@ -248,24 +267,22 @@ class ApiEndpoints(
     prefetchStatusEndpoint,
     recommendationsEndpoint,
     schemaEndpoint,
-    corsProxyEndpoint,
+    corsProxyEndpoint
   )
 
 object ApiEndpoints:
   val DefaultRecommendationLimit = 10
-  val ScorePrecision             = 10000.0
-  val ImmutableCacheControl      = "public, max-age=31536000, immutable"
+  val ScorePrecision = 10000.0
+  val ImmutableCacheControl = "public, max-age=31536000, immutable"
 
 private def decodeProxyUrl(raw: String): Either[String, String] =
   // Strip leading underscore added by HMM frontend, restore base64url padding
   val stripped = raw.stripPrefix("_")
-  val padded   = stripped + "=" * ((-stripped.length) % 4)
+  val padded = stripped + "=" * ((-stripped.length) % 4)
   try
     val decoded = new String(Base64.getUrlDecoder.decode(padded))
     if decoded.startsWith("http://") || decoded.startsWith("https://") then Right(decoded)
     else Left("Not a valid URL to proxy")
-  catch
-    case _: Exception => Left("Unable to decode requested proxy item")
+  catch case _: Exception => Left("Unable to decode requested proxy item")
 
-extension (s: String)
-  private def ifEmpty(fallback: String): String = if s.isEmpty then fallback else s
+extension (s: String) private def ifEmpty(fallback: String): String = if s.isEmpty then fallback else s

@@ -10,7 +10,7 @@ object FieldReduction:
 
   private def applyWhitelist(json: Json, whitelist: Option[List[String]]): Json =
     whitelist match
-      case None         => json
+      case None => json
       case Some(fields) =>
         json.asObject.fold(json) { obj =>
           Json.fromFields(fields.flatMap(f => obj(f).map(f -> _)))

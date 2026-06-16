@@ -15,7 +15,7 @@ class GameFilterSpec extends AnyWordSpec with Matchers:
       complexity: Option[Double] = Some(2.5),
       rating: Option[Double] = Some(7.0),
       mechanics: List[String] = Nil,
-      suggestions: List[PlayerSuggestion] = Nil,
+      suggestions: List[PlayerSuggestion] = Nil
   ): GameData = GameData(
     id = GameId(1),
     name = "Test Game",
@@ -31,7 +31,7 @@ class GameFilterSpec extends AnyWordSpec with Matchers:
     mechanics = mechanics,
     categories = Nil,
     playerSuggestions = suggestions,
-    usersRated = Some(500),
+    usersRated = Some(500)
   )
 
   "ExpansionsFilter" should:
@@ -57,7 +57,7 @@ class GameFilterSpec extends AnyWordSpec with Matchers:
     "use recommended player counts when available" in:
       val suggestions = List(
         PlayerSuggestion(numericPlayerCount = 3, best = 10, recommended = 5, notRecommended = 1),
-        PlayerSuggestion(numericPlayerCount = 4, best = 8, recommended = 6, notRecommended = 2),
+        PlayerSuggestion(numericPlayerCount = 4, best = 8, recommended = 6, notRecommended = 2)
       )
       val filter = PlayersFilter(playerCount = Some(2), useRecommended = true)
       filter.excludes(game(suggestions = suggestions)) shouldBe true
@@ -99,13 +99,17 @@ class GameFilterSpec extends AnyWordSpec with Matchers:
       MechanicsFilter(Nil).excludes(game()) shouldBe false
 
     "pass when game has required mechanic" in:
-      MechanicsFilter(List("Worker Placement")).excludes(game(mechanics = List("Worker Placement", "Dice Rolling"))) shouldBe false
+      MechanicsFilter(List("Worker Placement")).excludes(
+        game(mechanics = List("Worker Placement", "Dice Rolling"))
+      ) shouldBe false
 
     "exclude when game lacks required mechanic" in:
       MechanicsFilter(List("Worker Placement")).excludes(game(mechanics = List("Dice Rolling"))) shouldBe true
 
     "strip vendor prefixes before comparison" in:
-      MechanicsFilter(List("Worker Placement")).excludes(game(mechanics = List("XZ-99 Worker Placement"))) shouldBe false
+      MechanicsFilter(List("Worker Placement")).excludes(
+        game(mechanics = List("XZ-99 Worker Placement"))
+      ) shouldBe false
 
   "RatingFilter" should:
     "pass when no rating filter set" in:
@@ -128,5 +132,5 @@ class GameFilterSpec extends AnyWordSpec with Matchers:
 
     "return games that pass all filters" in:
       val filters = GameFilters.default
-      val g       = game()
+      val g = game()
       GameFilter(List(g), filters) shouldBe List(g)
