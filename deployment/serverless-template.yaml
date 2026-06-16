@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: 'BGG Game Selector API - Serverless deployment (AWS Free Tier optimized)'
+Description: 'BGG Game Selector API v3 - Scala/Tapir native Lambda'
 
 Parameters:
   EnvironmentName:
@@ -35,8 +35,10 @@ Parameters:
 Globals:
   Function:
     Timeout: 30
-    MemorySize: 1024
-    Runtime: python3.13
+    MemorySize: 512
+    Runtime: provided.al2023
+    Architectures:
+      - x86_64
     Environment:
       Variables:
         CACHE_BACKEND: dynamodb
@@ -44,13 +46,14 @@ Globals:
         DYNAMODB_GAME_TABLE: !Ref GameCacheTable
         DYNAMODB_VECTOR_TABLE: !Ref GameVectorsTable
         DYNAMODB_PREFETCH_TABLE: !Ref PrefetchStatusTable
-        FLASK_ENV: production
+        DYNAMODB_REGION: !Ref AWS::Region
         BGG_ACCESS_TOKEN: !Ref BggAccessToken
         BGG_TIMEOUT: '60'
         BGG_RETRIES: '6'
         BGG_RETRY_DELAY: '10'
         REQUEST_CACHE_DURATION: '86400'
         GAME_CACHE_DURATION: '604800'
+        PREFETCH_SQS_URL: !Ref PrefetchQueue
 
 Resources:
   # IAM Role for API Gateway to write CloudWatch Logs (Account-level, one-time setup)
@@ -67,13 +70,12 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
 
-  # API Gateway Account (sets CloudWatch role for entire account)
   ApiGatewayAccount:
     Type: AWS::ApiGateway::Account
     Properties:
       CloudWatchRoleArn: !GetAtt ApiGatewayCloudWatchLogsRole.Arn
 
-  # DynamoDB Table for request cache (collections, searches) - FREE TIER
+  # DynamoDB Tables
   RequestCacheTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -88,19 +90,12 @@ Resources:
       TimeToLiveSpecification:
         AttributeName: ttl
         Enabled: true
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: false
       Tags:
         - Key: Environment
           Value: !Ref EnvironmentName
         - Key: Application
           Value: bgg-game-selector
-        - Key: CacheType
-          Value: request-cache
-        - Key: CostCenter
-          Value: free-tier
 
-  # DynamoDB Table for game cache (individual game data) - FREE TIER
   GameCacheTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -115,19 +110,12 @@ Resources:
       TimeToLiveSpecification:
         AttributeName: ttl
         Enabled: true
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: false
       Tags:
         - Key: Environment
           Value: !Ref EnvironmentName
         - Key: Application
           Value: bgg-game-selector
-        - Key: CacheType
-          Value: game-cache
-        - Key: CostCenter
-          Value: free-tier
 
-  # DynamoDB Table for prefetch status (tracks in-flight and terminal prefetch results)
   PrefetchStatusTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -142,24 +130,35 @@ Resources:
       TimeToLiveSpecification:
         AttributeName: ttl
         Enabled: true
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: false
       Tags:
         - Key: Environment
           Value: !Ref EnvironmentName
         - Key: Application
           Value: bgg-game-selector
-        - Key: CacheType
-          Value: prefetch-status
-        - Key: CostCenter
-          Value: free-tier
 
-  # SQS Queue for prefetch jobs (FREE TIER: 1M requests/month)
+  GameVectorsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${EnvironmentName}-bgg-game-vectors
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: game_id
+          AttributeType: N
+      KeySchema:
+        - AttributeName: game_id
+          KeyType: HASH
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Application
+          Value: bgg-game-selector
+
+  # SQS Queue for prefetch jobs
   PrefetchQueue:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub ${EnvironmentName}-bgg-prefetch-queue
-      VisibilityTimeout: 960  # 16 min — must exceed worker Lambda timeout (15 min)
+      VisibilityTimeout: 960
       MessageRetentionPeriod: 3600
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt PrefetchDeadLetterQueue.Arn
@@ -181,41 +180,15 @@ Resources:
         - Key: Application
           Value: bgg-game-selector
 
-  # DynamoDB Table for game vectors (permanent store — no TTL)
-  GameVectorsTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: !Sub ${EnvironmentName}-bgg-game-vectors
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: game_id
-          AttributeType: N
-      KeySchema:
-        - AttributeName: game_id
-          KeyType: HASH
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: false
-      Tags:
-        - Key: Environment
-          Value: !Ref EnvironmentName
-        - Key: Application
-          Value: bgg-game-selector
-        - Key: Purpose
-          Value: game-vectors
-
-  # Lambda Function (FREE TIER: 1M requests/month, 400K GB-seconds compute)
+  # API Lambda — GraalVM native binary, custom runtime (provided.al2023)
+  # SyncLambdaHandler decodes API Gateway REST API events directly via tapir-aws-lambda-core.
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub ${EnvironmentName}-bgg-api
-      CodeUri: ../
-      Handler: lambda_handler.handler
-      Description: BGG Game Selector API - Serverless handler
-      Architectures:
-        - x86_64
-      Environment:
-        Variables:
-          PREFETCH_SQS_URL: !Ref PrefetchQueue
+      CodeUri: ./bgg-api-native.zip
+      Handler: bgg.lambda.ApiLambdaHandler
+      Description: BGG Game Selector API v3 - Scala/Tapir native Lambda
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref RequestCacheTable
@@ -234,125 +207,73 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /health
             Method: GET
-        HealthCheckOptions:
-          Type: Api
-          Properties:
-            RestApiId: !Ref ApiGateway
-            Path: /health
-            Method: OPTIONS
         GetCollection:
           Type: Api
           Properties:
             RestApiId: !Ref ApiGateway
             Path: /collection/{username}
             Method: GET
-        GetCollectionOptions:
-          Type: Api
-          Properties:
-            RestApiId: !Ref ApiGateway
-            Path: /collection/{username}
-            Method: OPTIONS
         GetGeekList:
           Type: Api
           Properties:
             RestApiId: !Ref ApiGateway
             Path: /geeklist/{geek_list}
             Method: GET
-        GetGeekListOptions:
-          Type: Api
-          Properties:
-            RestApiId: !Ref ApiGateway
-            Path: /geeklist/{geek_list}
-            Method: OPTIONS
         SearchGames:
           Type: Api
           Properties:
             RestApiId: !Ref ApiGateway
             Path: /search/{game_name}
             Method: GET
-        SearchGamesOptions:
-          Type: Api
-          Properties:
-            RestApiId: !Ref ApiGateway
-            Path: /search/{game_name}
-            Method: OPTIONS
         CorsProxy:
           Type: Api
           Properties:
             RestApiId: !Ref ApiGateway
             Path: /cors-proxy/{url}
             Method: GET
-        CorsProxyOptions:
-          Type: Api
-          Properties:
-            RestApiId: !Ref ApiGateway
-            Path: /cors-proxy/{url}
-            Method: OPTIONS
         RecommendationsFromGames:
           Type: Api
           Properties:
             RestApiId: !Ref ApiGateway
             Path: /recommendations/from-games
             Method: POST
-        RecommendationsFromGamesOptions:
-          Type: Api
-          Properties:
-            RestApiId: !Ref ApiGateway
-            Path: /recommendations/from-games
-            Method: OPTIONS
         RecommendationsSchema:
           Type: Api
           Properties:
             RestApiId: !Ref ApiGateway
             Path: /recommendations/schema
             Method: GET
-        RecommendationsSchemaOptions:
-          Type: Api
-          Properties:
-            RestApiId: !Ref ApiGateway
-            Path: /recommendations/schema
-            Method: OPTIONS
         Prefetch:
           Type: Api
           Properties:
             RestApiId: !Ref ApiGateway
             Path: /prefetch
             Method: POST
-        PrefetchOptions:
-          Type: Api
-          Properties:
-            RestApiId: !Ref ApiGateway
-            Path: /prefetch
-            Method: OPTIONS
         PrefetchStatus:
           Type: Api
           Properties:
             RestApiId: !Ref ApiGateway
             Path: /prefetch/status/{source_type}/{source_id}
             Method: GET
-        PrefetchStatusOptions:
+        # Catch-all OPTIONS for CORS (handled by Tapir/Netty)
+        CorsOptions:
           Type: Api
           Properties:
             RestApiId: !Ref ApiGateway
-            Path: /prefetch/status/{source_type}/{source_id}
+            Path: /{proxy+}
             Method: OPTIONS
       Tags:
         Environment: !Ref EnvironmentName
 
-  # Worker Lambda — triggered by SQS, 15 min timeout to give BGG maximum time to respond
+  # Worker Lambda — triggered by SQS, standard Java handler (no Web Adapter needed)
   PrefetchWorkerFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub ${EnvironmentName}-bgg-prefetch-worker
-      CodeUri: ../
-      Handler: prefetch_worker.handler
-      Description: BGG prefetch worker — fetches BGG data async and warms the cache
+      CodeUri: ./bgg-api-native.zip
+      Handler: bgg.lambda.PrefetchWorker
+      Description: BGG prefetch worker v3 — fetches BGG data async and warms the cache
       Timeout: 900
-      Architectures:
-        - x86_64
-      Environment:
-        Variables:
-          PREFETCH_SQS_URL: !Ref PrefetchQueue
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref RequestCacheTable
@@ -373,17 +294,13 @@ Resources:
       Tags:
         Environment: !Ref EnvironmentName
 
-  # API Gateway (FREE TIER: 1M API calls/month)
+  # API Gateway
   ApiGateway:
     Type: AWS::Serverless::Api
     Properties:
       Name: !Sub ${EnvironmentName}-bgg-api
       StageName: !Ref EnvironmentName
-      Description: BGG Game Selector API Gateway
-      # CORS is handled by Flask-CORS in the Lambda — OPTIONS requests are routed to Lambda
-      # so it can return the correct Access-Control-Allow-* headers without MOCK integrations,
-      # which break when BinaryMediaTypes includes */* (API Gateway fails to decode MOCK body).
-      # Throttling to prevent abuse (FREE TIER PROTECTION)
+      Description: BGG Game Selector API Gateway v3
       MethodSettings:
         - ResourcePath: '/*'
           HttpMethod: '*'
@@ -394,21 +311,24 @@ Resources:
           MetricsEnabled: true
       BinaryMediaTypes:
         - '*~1*'
-      # API Key requirement (optional, uncomment for additional security)
-      # Auth:
-      #   ApiKeyRequired: true
       Tags:
         Environment: !Ref EnvironmentName
         CostCenter: free-tier
 
-  # CloudWatch Log Group (FREE TIER: 5GB ingestion, 5GB archive, 7-day retention)
+  # CloudWatch Log Groups
   ApiLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub /aws/lambda/${ApiFunction}
-      RetentionInDays: 7  # Keep costs minimal
+      RetentionInDays: 7
 
-  # CloudWatch Alarms for cost monitoring
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${PrefetchWorkerFunction}
+      RetentionInDays: 7
+
+  # CloudWatch Alarms
   HighRequestAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -417,9 +337,9 @@ Resources:
       MetricName: Count
       Namespace: AWS/ApiGateway
       Statistic: Sum
-      Period: 86400  # 24 hours
+      Period: 86400
       EvaluationPeriods: 1
-      Threshold: 800000  # 80% of 1M free tier
+      Threshold: 800000
       ComparisonOperator: GreaterThanThreshold
       Dimensions:
         - Name: ApiName
@@ -434,41 +354,14 @@ Resources:
       MetricName: ConsumedReadCapacityUnits
       Namespace: AWS/DynamoDB
       Statistic: Sum
-      Period: 3600  # 1 hour
+      Period: 3600
       EvaluationPeriods: 1
-      Threshold: 50000  # Alerts if > 50K reads/hour
+      Threshold: 50000
       ComparisonOperator: GreaterThanThreshold
       Dimensions:
         - Name: TableName
           Value: !Ref GameCacheTable
       TreatMissingData: notBreaching
-
-  # WAF Web ACL for additional security (Optional, small cost ~$5/month)
-  # Uncomment if you need DDoS protection beyond throttling
-  # WebACL:
-  #   Type: AWS::WAFv2::WebACL
-  #   Properties:
-  #     Name: !Sub ${EnvironmentName}-bgg-api-waf
-  #     Scope: REGIONAL
-  #     DefaultAction:
-  #       Allow: {}
-  #     Rules:
-  #       - Name: RateLimitRule
-  #         Priority: 1
-  #         Statement:
-  #           RateBasedStatement:
-  #             Limit: 2000  # 2000 requests per 5 minutes per IP
-  #             AggregateKeyType: IP
-  #         Action:
-  #           Block: {}
-  #         VisibilityConfig:
-  #           SampledRequestsEnabled: true
-  #           CloudWatchMetricsEnabled: true
-  #           MetricName: RateLimitRule
-  #     VisibilityConfig:
-  #       SampledRequestsEnabled: true
-  #       CloudWatchMetricsEnabled: true
-  #       MetricName: !Sub ${EnvironmentName}-bgg-waf
 
 Outputs:
   ApiEndpoint:
@@ -488,6 +381,12 @@ Outputs:
     Value: !GetAtt ApiFunction.Arn
     Export:
       Name: !Sub ${EnvironmentName}-bgg-function-arn
+
+  WorkerFunctionArn:
+    Description: Prefetch Worker Lambda Function ARN
+    Value: !GetAtt PrefetchWorkerFunction.Arn
+    Export:
+      Name: !Sub ${EnvironmentName}-bgg-worker-function-arn
 
   DynamoDBRequestTableName:
     Description: DynamoDB table name for request cache
@@ -524,7 +423,3 @@ Outputs:
     Value: !Ref PrefetchDeadLetterQueue
     Export:
       Name: !Sub ${EnvironmentName}-bgg-prefetch-dlq-url
-
-  EstimatedMonthlyCost:
-    Description: Estimated monthly cost (within free tier limits)
-    Value: "$0.00 (if staying within free tier: <1M requests, <25GB DynamoDB, <400K GB-seconds Lambda)"
