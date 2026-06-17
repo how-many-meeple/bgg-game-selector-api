@@ -6,7 +6,7 @@ import bgg.config.AppConfig
 import bgg.domain.*
 import bgg.filter.GameFilter
 import bgg.prefetch.{PrefetchStatus, PrefetchStatusStore}
-import bgg.recommendation.RecommendationEngine
+import bgg.recommendation.{RecommendationEngine, RecommendedGame}
 import bgg.store.VectorStore
 import bgg.vector.{VectorDimensions, VectorMath, MechanicVocabulary, CategoryVocabulary}
 import com.typesafe.scalalogging.StrictLogging
@@ -34,7 +34,8 @@ case class RecommendResponse(
     tasteVectorDimensions: Int
 ) derives ConfiguredCodec
 
-case class RecommendedGameJson(gameId: Int, name: String, similarityScore: Double) derives ConfiguredCodec
+case class RecommendedGameJson(gameId: Int, name: String, similarityScore: Double, game: Option[Json])
+    derives ConfiguredCodec
 
 case class StatusResponse(status: String, sourceType: String, sourceId: String) derives ConfiguredCodec
 
@@ -152,8 +153,8 @@ class ApiEndpoints(
       val excludeIds = req.excludeIds.getOrElse(Nil).map(GameId(_)).toSet ++ gameIds.toSet
       val filters = HeaderFilters.fromHeaders(hdrs)
 
-      val games = gameIds.flatMap(id => gameCache.load(id).toList)
-      if games.isEmpty then Left(Fail.NotFound("None of the provided game IDs were found in cache"))
+      val games = resolveInputGames(gameIds)
+      if games.isEmpty then Left(Fail.NotFound("None of the provided game IDs could be resolved"))
       else
         val tasteVector = VectorMath.buildTasteVector(games)
         val recommendations = RecommendationEngine.recommend(
@@ -164,15 +165,10 @@ class ApiEndpoints(
           excludeIds = excludeIds,
           filters = filters
         )
+        val enriched = enrichRecommendations(recommendations)
         Right(
           RecommendResponse(
-            recommendations = recommendations.map(r =>
-              RecommendedGameJson(
-                r.gameId.value,
-                r.name,
-                math.round(r.similarityScore * ScorePrecision) / ScorePrecision
-              )
-            ),
+            recommendations = enriched,
             inputGamesCount = games.size,
             tasteVectorDimensions = VectorDimensions
           )
@@ -231,6 +227,28 @@ class ApiEndpoints(
             case e: Exception =>
               logger.error(s"CORS proxy failed for $url", e)
               Left(Fail.IncorrectInput(s"Proxy request failed: ${e.getClass.getName}: ${e.getMessage}"))
+    }
+
+  private def resolveInputGames(gameIds: List[GameId]): List[GameData] =
+    gameService.resolveGameIds(gameIds) match
+      case Right(games) => games
+      case Left(_) =>
+        gameIds.flatMap(id => gameCache.load(id).toList)
+
+  private def enrichRecommendations(recommendations: List[RecommendedGame]): List[RecommendedGameJson] =
+    val recIds = recommendations.map(_.gameId)
+    val gameMap: Map[GameId, GameData] = gameService.resolveGameIds(recIds) match
+      case Right(games) => games.map(g => (g.id, g)).toMap
+      case Left(_) =>
+        recIds.flatMap(id => gameCache.load(id).map(g => (id, g))).toMap
+
+    recommendations.map { r =>
+      RecommendedGameJson(
+        r.gameId.value,
+        r.name,
+        math.round(r.similarityScore * ScorePrecision) / ScorePrecision,
+        gameMap.get(r.gameId).map(_.toJson)
+      )
     }
 
   // Checks if a prefetch result blocks the main collection/geeklist request.
