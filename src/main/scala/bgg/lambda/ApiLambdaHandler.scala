@@ -26,7 +26,7 @@ class ApiLambdaHandler extends SyncLambdaHandler[AwsRequestV1](AwsSyncServerOpti
 
 object ApiLambdaHandler:
 
-  private def buildEndpoints(): ApiEndpoints =
+  private[lambda] def buildEndpoints(): ApiEndpoints =
     val config = AppConfig.load()
     val httpBackend = DefaultSyncBackend()
     val bggClient = BggXmlClient(config.bgg, httpBackend)

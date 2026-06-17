@@ -9,8 +9,8 @@ import bgg.store.{DynamoDbVectorStore, SqliteVectorStore}
 import com.amazonaws.services.lambda.runtime.{Context, RequestHandler}
 import com.amazonaws.services.lambda.runtime.events.SQSEvent
 import com.typesafe.scalalogging.StrictLogging
-import io.circe.parser.decode
-import io.circe.Decoder
+import io.circe.{Decoder, Json}
+import io.circe.parser.{decode, parse}
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
@@ -23,10 +23,42 @@ case class PrefetchMessage(sourceType: String, sourceId: String)
 object PrefetchMessage:
   given Decoder[PrefetchMessage] = Decoder.forProduct2("source_type", "source_id")(PrefetchMessage.apply)
 
+object PrefetchWorkerLogic:
+  def create(): PrefetchWorkerLogic =
+    val config = AppConfig.load()
+    val httpBackend = DefaultSyncBackend()
+    val bggClient = BggXmlClient(config.bgg, httpBackend)
+    val dynamo = DynamoDbClient
+      .builder()
+      .region(Region.of(config.aws.region))
+      .httpClient(UrlConnectionHttpClient.create())
+      .build()
+    val gameCache = DynamoDbGameCache(dynamo, config.aws.dynamoGameTable, config.cache.gameCacheTtlSeconds)
+    val vectorStore = DynamoDbVectorStore(dynamo, config.aws.dynamoVectorTable)
+    val prefetchStore = DynamoDbPrefetchStatusStore(dynamo, config.aws.dynamoPrefetchTable)
+    val gameService = GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
+    PrefetchWorkerLogic(gameService, prefetchStore)
+
 class PrefetchWorkerLogic(
     gameService: GameService,
     prefetchStore: PrefetchStatusStore
 ) extends StrictLogging:
+
+  def handleSqsEvent(eventJson: String): String =
+    parse(eventJson).flatMap(_.hcursor.downField("Records").as[List[Json]]) match
+      case Left(err) =>
+        logger.error(s"Failed to parse SQS event: ${err.getMessage}")
+      case Right(records) =>
+        records.foreach { record =>
+          record.hcursor.downField("body").as[String] match
+            case Right(body) =>
+              decode[PrefetchMessage](body) match
+                case Left(err)  => logger.error(s"Failed to parse SQS message body: $body", err)
+                case Right(msg) => process(msg)
+            case Left(err) =>
+              logger.error(s"Failed to extract body from SQS record: ${err.getMessage}")
+        }
+    """{"statusCode":200}"""
 
   def process(msg: PrefetchMessage): Unit =
     SourceType.fromString(msg.sourceType) match

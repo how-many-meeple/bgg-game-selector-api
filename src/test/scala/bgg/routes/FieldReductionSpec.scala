@@ -35,8 +35,8 @@ class FieldReductionSpec extends AnyWordSpec with Matchers:
       val json = result.head
       json.hcursor.get[String]("name").toOption shouldBe Some("Catan")
       json.hcursor.get[Int]("id").toOption shouldBe Some(1)
-      json.hcursor.get[Int]("yearPublished").toOption shouldBe Some(2020)
-      json.hcursor.get[Int]("minPlayers").toOption shouldBe Some(2)
+      json.hcursor.get[Int]("yearpublished").toOption shouldBe Some(2020)
+      json.hcursor.get[Int]("minplayers").toOption shouldBe Some(2)
 
     "filter to only specified fields" in:
       val games = List(game(1, "Catan"))
@@ -46,8 +46,8 @@ class FieldReductionSpec extends AnyWordSpec with Matchers:
       val json = result.head
       json.hcursor.get[String]("name").toOption shouldBe Some("Catan")
       json.hcursor.get[Int]("id").toOption shouldBe Some(1)
-      json.hcursor.get[Int]("yearPublished").toOption shouldBe None
-      json.hcursor.get[Int]("minPlayers").toOption shouldBe None
+      json.hcursor.get[Int]("yearpublished").toOption shouldBe None
+      json.hcursor.get[Int]("minplayers").toOption shouldBe None
 
     "return empty JSON objects when whitelist is empty" in:
       val games = List(game(1, "Catan"))

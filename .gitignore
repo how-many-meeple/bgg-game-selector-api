@@ -6,8 +6,12 @@ project/project/
 # IDE
 .idea/
 .bsp/
+.bloop/
+.metals/
+.vscode/
 *.iml
 *.iws
+project/metals.sbt
 
 # SQLite runtime databases
 *.sqlite
@@ -17,6 +21,9 @@ project/project/
 # Deployment artifacts
 *.zip
 deployment/bootstrap
+
+# PoC experiments
+poc/
 
 # Environment
 .env

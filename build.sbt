@@ -3,7 +3,7 @@ val scala3Version = "3.3.8"
 
 ThisBuild / organization := "bgg"
 ThisBuild / scalaVersion := scala3Version
-ThisBuild / version      := "3.0.0"
+ThisBuild / version      := "3.0.10"
 
 ThisBuild / scalacOptions ++= Seq(
   "-Wunused:all",
@@ -51,17 +51,17 @@ lazy val root = (project in file("."))
       // AWS Lambda runtime (API Gateway proxy integration)
       "com.amazonaws"                % "aws-lambda-java-core"     % "1.2.3",
       "com.amazonaws"                % "aws-lambda-java-events"   % "3.11.6",
-      // Lambda custom runtime bootstrap (for GraalVM native-image deployment)
-      "com.amazonaws"                % "aws-lambda-java-runtime-interface-client" % "2.5.0",
       // Testing
       "org.scalatest"               %% "scalatest"                % "3.2.18"  % Test,
       "org.scalamock"               %% "scalamock"                % "6.0.0"   % Test,
       "com.softwaremill.sttp.tapir" %% "tapir-sttp-stub4-server" % "1.13.21" % Test,
+      "org.testcontainers"           % "testcontainers"           % "1.20.4"  % Test,
+      "org.testcontainers"           % "localstack"               % "1.20.4"  % Test,
     ),
 
-    // Fat jar for Lambda deployment — AWSLambda reads _HANDLER env var to find our handler class
+    // Fat jar for Lambda deployment — NativeBootstrap speaks Lambda Runtime API directly
     assembly / assemblyJarName := "bgg-api-assembly.jar",
-    assembly / mainClass := Some("com.amazonaws.services.lambda.runtime.api.client.AWSLambda"),
+    assembly / mainClass := Some("bgg.lambda.NativeBootstrap"),
     assembly / assemblyMergeStrategy := {
       case PathList("META-INF", "native-image", "org.xerial", _*)   => MergeStrategy.discard
       case PathList("META-INF", "native-image", "software.amazon.awssdk", "netty-nio-client", _*) => MergeStrategy.discard

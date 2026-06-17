@@ -22,8 +22,8 @@ RUN sbt assembly
 # Build the native image from the fat jar (main class from jar manifest)
 RUN native-image \
     --no-fallback \
-    --enable-url-protocols=https \
-    --initialize-at-build-time=ch.qos.logback,org.slf4j \
+    --enable-url-protocols=http,https \
+    --initialize-at-build-time=ch.qos.logback,org.slf4j,io.circe,sttp.tapir,sttp.model,sttp.shared,scala,org.typelevel.jawn,cats \
     -H:+ReportExceptionStackTraces \
     -jar target/scala-3.3.8/bgg-api-assembly.jar \
     -o /app/bootstrap

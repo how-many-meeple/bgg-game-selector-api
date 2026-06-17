@@ -10,9 +10,9 @@ import bgg.recommendation.RecommendationEngine
 import bgg.store.VectorStore
 import bgg.vector.{VectorDimensions, VectorMath, MechanicVocabulary, CategoryVocabulary}
 import com.typesafe.scalalogging.StrictLogging
-import io.circe.generic.semiauto.*
+import io.circe.derivation.{Configuration, ConfiguredCodec}
 import io.circe.syntax.*
-import io.circe.{Codec, Json}
+import io.circe.Json
 import sttp.model.{Header, StatusCode}
 import sttp.tapir.*
 import sttp.tapir.generic.auto.*
@@ -20,34 +20,23 @@ import sttp.tapir.json.circe.*
 
 import java.util.Base64
 
-// Request / response models
-case class PrefetchRequest(sourceType: String, sourceId: String)
-object PrefetchRequest:
-  given Codec[PrefetchRequest] = deriveCodec
+given Configuration = Configuration.default.withSnakeCaseMemberNames
 
-case class PrefetchResponse(status: String, message: String)
-object PrefetchResponse:
-  given Codec[PrefetchResponse] = deriveCodec
+case class PrefetchRequest(sourceType: String, sourceId: String) derives ConfiguredCodec
+case class PrefetchResponse(status: String, message: String) derives ConfiguredCodec
 
 case class RecommendRequest(gameIds: List[Int], limit: Option[Int], excludeIds: Option[List[Int]])
-object RecommendRequest:
-  given Codec[RecommendRequest] = deriveCodec
+    derives ConfiguredCodec
 
 case class RecommendResponse(
     recommendations: List[RecommendedGameJson],
     inputGamesCount: Int,
     tasteVectorDimensions: Int
-)
-object RecommendResponse:
-  given Codec[RecommendResponse] = deriveCodec
+) derives ConfiguredCodec
 
-case class RecommendedGameJson(gameId: Int, name: String, similarityScore: Double)
-object RecommendedGameJson:
-  given Codec[RecommendedGameJson] = deriveCodec
+case class RecommendedGameJson(gameId: Int, name: String, similarityScore: Double) derives ConfiguredCodec
 
-case class StatusResponse(status: String, sourceType: String, sourceId: String)
-object StatusResponse:
-  given Codec[StatusResponse] = deriveCodec
+case class StatusResponse(status: String, sourceType: String, sourceId: String) derives ConfiguredCodec
 
 class ApiEndpoints(
     gameService: GameService,
@@ -55,8 +44,7 @@ class ApiEndpoints(
     vectorStore: VectorStore,
     prefetchStore: PrefetchStatusStore,
     sqsSender: SqsSender,
-    config: AppConfig,
-    httpBackend: sttp.client4.SyncBackend = sttp.client4.DefaultSyncBackend()
+    config: AppConfig
 ) extends StrictLogging:
 
   import ErrorOutput.*
@@ -224,18 +212,25 @@ class ApiEndpoints(
         case Left(e) => Left(Fail.IncorrectInput(e))
         case Right(url) =>
           try
-            val response = sttp.client4.quick.quickRequest
-              .get(sttp.model.Uri.unsafeParse(url))
-              .response(sttp.client4.asByteArrayAlways)
-              .send(httpBackend)
-            Right(
-              (
-                response.body,
-                response.headers.find(_.name == "content-type").map(_.value).getOrElse("application/octet-stream"),
-                ImmutableCacheControl
-              )
-            )
-          catch case e: Exception => Left(Fail.IncorrectInput(s"Proxy request failed: ${e.getMessage}"))
+            val conn = java.net.URI.create(url).toURL.openConnection().asInstanceOf[java.net.HttpURLConnection]
+            conn.setRequestMethod("GET")
+            conn.setConnectTimeout(10000)
+            conn.setReadTimeout(10000)
+            try
+              val contentType = Option(conn.getContentType).getOrElse("application/octet-stream")
+              val is = conn.getInputStream
+              val baos = new java.io.ByteArrayOutputStream()
+              val buf = new Array[Byte](8192)
+              var n = is.read(buf)
+              while n >= 0 do
+                baos.write(buf, 0, n)
+                n = is.read(buf)
+              Right((baos.toByteArray, contentType, ImmutableCacheControl))
+            finally conn.disconnect()
+          catch
+            case e: Exception =>
+              logger.error(s"CORS proxy failed for $url", e)
+              Left(Fail.IncorrectInput(s"Proxy request failed: ${e.getClass.getName}: ${e.getMessage}"))
     }
 
   // Checks if a prefetch result blocks the main collection/geeklist request.
