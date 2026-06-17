@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: 'BGG Game Selector API v3 - Scala/Tapir native Lambda'
+Description: 'BGG Game Selector API v3.2.0 - Scala/Tapir native Lambda'
 
 Parameters:
   EnvironmentName:
@@ -218,6 +218,12 @@ Resources:
           Properties:
             RestApiId: !Ref ApiGateway
             Path: /geeklist/{geek_list}
+            Method: GET
+        GetGame:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /game/{game_id}
             Method: GET
         SearchGames:
           Type: Api
