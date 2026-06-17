@@ -265,7 +265,7 @@ Resources:
       Tags:
         Environment: !Ref EnvironmentName
 
-  # Worker Lambda — triggered by SQS, standard Java handler (no Web Adapter needed)
+  # Worker Lambda — triggered by SQS, custom runtime with LAMBDA_HANDLER to select worker path
   PrefetchWorkerFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -274,6 +274,9 @@ Resources:
       Handler: bgg.lambda.PrefetchWorker
       Description: BGG prefetch worker v3 — fetches BGG data async and warms the cache
       Timeout: 900
+      Environment:
+        Variables:
+          LAMBDA_HANDLER: PrefetchWorker
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref RequestCacheTable
@@ -322,11 +325,6 @@ Resources:
       LogGroupName: !Sub /aws/lambda/${ApiFunction}
       RetentionInDays: 7
 
-  WorkerLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub /aws/lambda/${PrefetchWorkerFunction}
-      RetentionInDays: 7
 
   # CloudWatch Alarms
   HighRequestAlarm:

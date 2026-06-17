@@ -6,7 +6,8 @@
       {"pattern": "reference\\.conf"},
       {"pattern": "META-INF/services/.*"},
       {"pattern": "META-INF/native-image/.*"},
-      {"pattern": "software/amazon/awssdk/.*"}
+      {"pattern": "software/amazon/awssdk/.*"},
+      {"pattern": ".*libaws-lambda-jni.*\\.so"}
     ]
   }
 }

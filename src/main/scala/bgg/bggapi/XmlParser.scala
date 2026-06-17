@@ -32,6 +32,8 @@ private[bggapi] object XmlParser:
       val ratingAvg = stats.flatMap(s => doubleAttr(s \ "average", "@value"))
       val ratingWeight = stats.flatMap(s => doubleAttr(s \ "averageweight", "@value"))
       val usersRated = stats.flatMap(s => intAttr(s \ "usersrated", "@value"))
+      val image = (item \ "image").headOption.map(_.text.trim).filter(_.nonEmpty)
+      val thumbnail = (item \ "thumbnail").headOption.map(_.text.trim).filter(_.nonEmpty)
 
       GameData(
         id = GameId(id),
@@ -48,7 +50,9 @@ private[bggapi] object XmlParser:
         mechanics = mechanics,
         categories = categories,
         playerSuggestions = suggestions,
-        usersRated = usersRated
+        usersRated = usersRated,
+        image = image,
+        thumbnail = thumbnail
       )
     }
 

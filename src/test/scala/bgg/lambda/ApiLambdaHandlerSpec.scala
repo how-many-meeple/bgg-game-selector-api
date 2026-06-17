@@ -198,7 +198,7 @@ class ApiLambdaHandlerSpec extends AnyWordSpec with Matchers with BeforeAndAfter
 
     "route POST /prefetch and return 202 for new prefetch" in:
       val handler = makeHandler(stubClient())
-      val body = """{"sourceType":"collection","sourceId":"testuser"}"""
+      val body = """{"source_type":"collection","source_id":"testuser"}"""
       val event = apiGatewayPostEvent("/prefetch", "/prefetch", body)
       val (status, json) = sendEvent(handler, event)
 
@@ -215,13 +215,13 @@ class ApiLambdaHandlerSpec extends AnyWordSpec with Matchers with BeforeAndAfter
       vectorStore.save(StoredVector(GameId(2), "Pandemic", VectorMath.generateGameVector(g2), Instant.now()))
 
       val handler = makeHandler(stubClient())
-      val body = """{"gameIds":[1],"limit":5}"""
+      val body = """{"game_ids":[1],"limit":5}"""
       val event = apiGatewayPostEvent("/recommendations/from-games", "/recommendations/from-games", body)
       val (status, json) = sendEvent(handler, event)
 
       status shouldBe 200
       val respBody = responseBody(json)
-      respBody.hcursor.get[Int]("inputGamesCount").toOption shouldBe Some(1)
+      respBody.hcursor.get[Int]("input_games_count").toOption shouldBe Some(1)
 
     "route GET /recommendations/schema and return 200" in:
       val handler = makeHandler(stubClient())
@@ -259,7 +259,7 @@ class ApiLambdaHandlerSpec extends AnyWordSpec with Matchers with BeforeAndAfter
 
     "route POST /prefetch and return 400 for invalid sourceType" in:
       val handler = makeHandler(stubClient())
-      val body = """{"sourceType":"invalid","sourceId":"test"}"""
+      val body = """{"source_type":"invalid","source_id":"test"}"""
       val event = apiGatewayPostEvent("/prefetch", "/prefetch", body)
       val (status, json) = sendEvent(handler, event)
 
@@ -269,7 +269,7 @@ class ApiLambdaHandlerSpec extends AnyWordSpec with Matchers with BeforeAndAfter
 
     "route POST /prefetch and return 400 for empty sourceId" in:
       val handler = makeHandler(stubClient())
-      val body = """{"sourceType":"collection","sourceId":"  "}"""
+      val body = """{"source_type":"collection","source_id":"  "}"""
       val event = apiGatewayPostEvent("/prefetch", "/prefetch", body)
       val (status, json) = sendEvent(handler, event)
 
@@ -279,7 +279,7 @@ class ApiLambdaHandlerSpec extends AnyWordSpec with Matchers with BeforeAndAfter
 
     "route POST /recommendations/from-games and return 404 when no games in cache" in:
       val handler = makeHandler(stubClient())
-      val body = """{"gameIds":[999],"limit":5}"""
+      val body = """{"game_ids":[999],"limit":5}"""
       val event = apiGatewayPostEvent("/recommendations/from-games", "/recommendations/from-games", body)
       val (status, json) = sendEvent(handler, event)
 
