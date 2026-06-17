@@ -228,6 +228,62 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
 
       response.code shouldBe StatusCode.Ok
 
+  "GET /game/:id" should:
+    "return 200 with game data from cache" in:
+      val game = testGame(42, "Catan")
+      gameCache.save(game)
+      val endpoints = makeEndpoints(stubClient())
+      val backend = makeBackend(endpoints)
+      val response = basicRequest
+        .get(uri"http://test/game/42")
+        .response(asStringAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.Ok
+      val json = parseJson(response.body).getOrElse(Json.Null)
+      json.hcursor.get[String]("name").toOption shouldBe Some("Catan")
+
+    "return 200 fetching from BGG when not in cache" in:
+      val game = testGame(7, "Pandemic")
+      val client = stubClient(gamesResult = Right(List(game)))
+      val endpoints = makeEndpoints(client)
+      val backend = makeBackend(endpoints)
+      val response = basicRequest
+        .get(uri"http://test/game/7")
+        .response(asStringAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.Ok
+      val json = parseJson(response.body).getOrElse(Json.Null)
+      json.hcursor.get[String]("name").toOption shouldBe Some("Pandemic")
+
+    "return 404 when game not found anywhere" in:
+      val client = stubClient(gamesResult = Right(Nil))
+      val endpoints = makeEndpoints(client)
+      val backend = makeBackend(endpoints)
+      val response = basicRequest
+        .get(uri"http://test/game/99999")
+        .response(asStringAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.NotFound
+
+    "respect field whitelist header" in:
+      val game = testGame(42, "Catan")
+      gameCache.save(game)
+      val endpoints = makeEndpoints(stubClient())
+      val backend = makeBackend(endpoints)
+      val response = basicRequest
+        .get(uri"http://test/game/42")
+        .header("Bgg-Field-Whitelist", "name,id")
+        .response(asStringAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.Ok
+      val json = parseJson(response.body).getOrElse(Json.Null)
+      json.hcursor.get[String]("name").toOption shouldBe Some("Catan")
+      json.hcursor.keys.map(_.toSet) shouldBe Some(Set("name", "id"))
+
   "GET /geeklist/:id" should:
     "return 200 with games on success" in:
       val client = stubClient(

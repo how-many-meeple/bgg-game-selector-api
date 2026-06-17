@@ -99,6 +99,48 @@ Games from a BGG user's collection, filtered via headers.
 
 Games from a BGG GeekList, filtered via headers.
 
+### GET /game/:id
+
+Fetch a single game by BGG ID. Returns from cache if available, otherwise fetches from BGG.
+
+**Request:**
+```
+GET /game/174430
+```
+
+**Response (200):**
+```json
+{
+  "id": 174430,
+  "name": "Gloomhaven",
+  "yearpublished": 2017,
+  "minplayers": 1,
+  "maxplayers": 4,
+  "minplaytime": 60,
+  "maxplaytime": 120,
+  "playingtime": 120,
+  "image": "https://cf.geekdo-images.com/sZYp_3BTDGjh2unaZfZmuA__original/img/...",
+  "thumbnail": "https://cf.geekdo-images.com/sZYp_3BTDGjh2unaZfZmuA__thumb/img/...",
+  "expansion": false,
+  "mechanics": ["Action Queue", "Campaign / Battle Card Driven", "Hand Management"],
+  "categories": ["Adventure", "Exploration", "Fantasy", "Fighting"],
+  "stats": {
+    "average": 8.2536,
+    "averageweight": 3.8637,
+    "usersrated": 58000
+  },
+  "suggested_players": {
+    "2": {"results": {"best": 500, "recommended": 800, "not_recommended": 50}},
+    "3": {"results": {"best": 900, "recommended": 400, "not_recommended": 20}}
+  }
+}
+```
+
+**Error (404):**
+```json
+{"error": "Game 99999 not found"}
+```
+
 ### GET /search/:query
 
 Search BGG for games by name (minimum 3 characters).

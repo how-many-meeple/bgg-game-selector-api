@@ -91,6 +91,19 @@ class ApiEndpoints(
           }
       }
 
+  // GET /game/:id
+  val gameEndpoint = baseEndpoint.get
+    .in("game" / path[Int]("id"))
+    .in(headers)
+    .out(jsonBody[Json])
+    .handle { (id, hdrs) =>
+      val filters = HeaderFilters.fromHeaders(hdrs)
+      gameService.resolveGameIds(List(GameId(id))).flatMap {
+        case game :: _ => Right(FieldReduction(List(game), filters.fieldWhitelist).head)
+        case Nil       => Left(Fail.NotFound(s"Game $id not found"))
+      }
+    }
+
   // GET /search/:query
   val searchEndpoint = baseEndpoint.get
     .in("search" / path[String]("query"))
@@ -270,6 +283,7 @@ class ApiEndpoints(
     healthEndpoint,
     collectionEndpoint,
     geeklistEndpoint,
+    gameEndpoint,
     searchEndpoint,
     prefetchEndpoint,
     prefetchStatusEndpoint,
