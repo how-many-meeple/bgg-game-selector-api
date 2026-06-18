@@ -10,21 +10,19 @@ import software.amazon.awssdk.services.dynamodb.model.*
 import java.time.Instant
 import scala.jdk.CollectionConverters.*
 
-class DynamoDbGameCache(client: DynamoDbClient, tableName: String, ttlSeconds: Int)
-    extends GameCache
-    with StrictLogging:
+class DynamoDbGameCache(client: DynamoDbClient, tableName: String) extends GameCache with StrictLogging:
 
   private given Logger = logger
 
   def evictExpired(): Unit = ()
 
-  def save(game: GameData): Unit =
-    val ttl = Instant.now().getEpochSecond + ttlSeconds
+  def save(game: GameData, now: Instant): Unit =
+    val ttl = AdaptiveTtl.computeTtl(game.yearPublished, now)
     val item = Map(
       "id" -> AttributeValue.fromS(game.id.asString),
       "data" -> AttributeValue.fromS(game.asJson.noSpaces),
-      "cache_timestamp" -> AttributeValue.fromS(Instant.now().toString),
-      "ttl" -> AttributeValue.fromN(ttl.toString)
+      "cache_timestamp" -> AttributeValue.fromS(now.toString),
+      "ttl" -> AttributeValue.fromN((now.getEpochSecond + ttl.getSeconds).toString)
     ).asJava
 
     val request = PutItemRequest
@@ -36,7 +34,7 @@ class DynamoDbGameCache(client: DynamoDbClient, tableName: String, ttlSeconds: I
 
     try
       client.putItem(request)
-      logger.debug(s"Cached game ${game.id.value} (${game.name})")
+      logger.debug(s"Cached game ${game.id.value} (${game.name}) with adaptive TTL ${ttl.toDays}d")
     catch
       case _: ConditionalCheckFailedException =>
         logger.debug(s"Game ${game.id.value} already cached")

@@ -5,20 +5,18 @@ import bgg.domain.{GameData, GameId}
 import java.time.Instant
 import scala.collection.concurrent.TrieMap
 
-class MemoryGameCache(ttlSeconds: Int) extends GameCache:
-  private val store: TrieMap[Int, (GameData, Long)] = TrieMap.empty
+class MemoryGameCache extends GameCache:
+  private val store: TrieMap[Int, (GameData, Instant)] = TrieMap.empty
 
-  def save(game: GameData): Unit =
-    store.putIfAbsent(game.id.value, (game, Instant.now().getEpochSecond)): Unit
+  def save(game: GameData, now: Instant): Unit =
+    store.putIfAbsent(game.id.value, (game, now)): Unit
 
   def load(id: GameId): Option[GameData] =
-    store
-      .updateWith(id.value) {
-        case Some((game, ts)) if Instant.now().getEpochSecond - ts < ttlSeconds => Some((game, ts))
-        case _                                                                  => None
-      }
-      .map(_._1)
+    val now = Instant.now()
+    store.get(id.value).collect {
+      case (game, cachedAt) if !AdaptiveTtl.isExpired(cachedAt, game.yearPublished, now) => game
+    }
 
   def evictExpired(): Unit =
-    val cutoff = Instant.now().getEpochSecond - ttlSeconds
-    store.filterInPlace((_, v) => v._2 >= cutoff)
+    val now = Instant.now()
+    store.filterInPlace((_, v) => !AdaptiveTtl.isExpired(v._2, v._1.yearPublished, now))

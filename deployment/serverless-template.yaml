@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: 'BGG Game Selector API v3.2.0 - Scala/Tapir native Lambda'
+Description: 'BGG Game Selector API v3.3.0 - Scala/Tapir native Lambda'
 
 Parameters:
   EnvironmentName:
@@ -48,7 +48,7 @@ Globals:
         DYNAMODB_PREFETCH_TABLE: !Ref PrefetchStatusTable
         DYNAMODB_REGION: !Ref AWS::Region
         BGG_ACCESS_TOKEN: !Ref BggAccessToken
-        BGG_TIMEOUT: '60'
+        BGG_TIMEOUT: '240'
         BGG_RETRIES: '6'
         BGG_RETRY_DELAY: '10'
         REQUEST_CACHE_DURATION: '86400'
@@ -300,6 +300,12 @@ Resources:
           Properties:
             Queue: !GetAtt PrefetchQueue.Arn
             BatchSize: 1
+        WeeklyHotListWarm:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 4 ? * MON *)
+            Description: Warm the hot games cache every Monday at 4am UTC
+            Input: '{"Records":[{"body":"{\"source_type\":\"hot\",\"source_id\":\"trending\"}"}]}'
       Tags:
         Environment: !Ref EnvironmentName
 
@@ -323,6 +329,53 @@ Resources:
       Tags:
         Environment: !Ref EnvironmentName
         CostCenter: free-tier
+
+  # CloudFront CDN — caches /cors-proxy/* at edge to avoid hot-linking BGG images
+  CdnDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub ${EnvironmentName} BGG API CDN — image caching
+        HttpVersion: http2and3
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: ApiGatewayOrigin
+            DomainName: !Sub ${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com
+            OriginPath: !Sub /${EnvironmentName}
+            CustomOriginConfig:
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols:
+                - TLSv1.2
+        DefaultCacheBehavior:
+          TargetOriginId: ApiGatewayOrigin
+          ViewerProtocolPolicy: https-only
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          OriginRequestPolicyId: b689b0a0-8776-4f12-925b-acf3a0e33d7c
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - PATCH
+            - POST
+            - DELETE
+          Compress: true
+        CacheBehaviors:
+          - PathPattern: /cors-proxy/*
+            TargetOriginId: ApiGatewayOrigin
+            ViewerProtocolPolicy: https-only
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+            AllowedMethods:
+              - GET
+              - HEAD
+            Compress: true
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Application
+          Value: bgg-game-selector
 
   # CloudWatch Log Groups
   ApiLogGroup:
@@ -368,8 +421,14 @@ Resources:
       TreatMissingData: notBreaching
 
 Outputs:
+  CdnEndpoint:
+    Description: CloudFront CDN URL (use this for frontend — caches cors-proxy images at edge)
+    Value: !Sub https://${CdnDistribution.DomainName}
+    Export:
+      Name: !Sub ${EnvironmentName}-bgg-cdn-url
+
   ApiEndpoint:
-    Description: API Gateway endpoint URL
+    Description: API Gateway endpoint URL (direct, bypasses CDN)
     Value: !Sub https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}
     Export:
       Name: !Sub ${EnvironmentName}-bgg-api-url

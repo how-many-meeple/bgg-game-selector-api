@@ -1,7 +1,7 @@
 package bgg.lambda
 
 import bgg.bggapi.{BggXmlClient, GameService}
-import bgg.cache.{DynamoDbGameCache, MemoryGameCache, SqliteGameCache}
+import bgg.cache.{DynamoDbGameCache, DynamoDbRequestCache, MemoryGameCache, NoOpRequestCache, SqliteGameCache}
 import bgg.config.{AppConfig, CacheBackend}
 import bgg.prefetch.{DynamoDbPrefetchStatusStore, SqlitePrefetchStatusStore}
 import bgg.routes.{ApiEndpoints, AwsSqsSender, ErrorOutput, NoOpSqsSender}
@@ -9,9 +9,11 @@ import bgg.store.{DynamoDbVectorStore, SqliteVectorStore}
 import com.typesafe.scalalogging.StrictLogging
 import ox.*
 import sttp.client4.DefaultSyncBackend
+import sttp.tapir.server.interceptor.cors.{CORSConfig, CORSInterceptor}
 import sttp.tapir.server.netty.sync.NettySyncServer
 import sttp.tapir.server.netty.sync.NettySyncServerOptions
 import sttp.tapir.server.model.ValuedEndpointOutput
+import sttp.shared.Identity
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import software.amazon.awssdk.services.sqs.SqsClient
@@ -32,7 +34,7 @@ object ApiHandler extends OxApp.Simple with StrictLogging:
     val httpBackend = useInScope(DefaultSyncBackend())(_.close())
     val bggClient = BggXmlClient(config.bgg, httpBackend)
 
-    val (gameCache, vectorStore, prefetchStore, sqsSender) = config.cache.backend match
+    val (gameCache, vectorStore, prefetchStore, sqsSender, requestCache) = config.cache.backend match
       case CacheBackend.DynamoDB =>
         val dynamo = useInScope(
           DynamoDbClient
@@ -49,34 +51,40 @@ object ApiHandler extends OxApp.Simple with StrictLogging:
             .build()
         )(_.close())
         (
-          DynamoDbGameCache(dynamo, config.aws.dynamoGameTable, config.cache.gameCacheTtlSeconds),
+          DynamoDbGameCache(dynamo, config.aws.dynamoGameTable),
           DynamoDbVectorStore(dynamo, config.aws.dynamoVectorTable),
           DynamoDbPrefetchStatusStore(dynamo, config.aws.dynamoPrefetchTable),
-          AwsSqsSender(sqs, config.aws.prefetchSqsUrl)
+          AwsSqsSender(sqs, config.aws.prefetchSqsUrl),
+          DynamoDbRequestCache(dynamo, config.aws.dynamoRequestTable)
         )
 
       case CacheBackend.SQLite =>
         (
-          SqliteGameCache(config.cache.sqliteGameCachePath, config.cache.gameCacheTtlSeconds),
+          SqliteGameCache(config.cache.sqliteGameCachePath),
           SqliteVectorStore(config.cache.sqliteVectorStorePath),
           SqlitePrefetchStatusStore(config.cache.sqlitePrefetchStatusPath),
-          NoOpSqsSender()
+          NoOpSqsSender(),
+          NoOpRequestCache()
         )
 
       case CacheBackend.Memory =>
         (
-          MemoryGameCache(config.cache.gameCacheTtlSeconds),
+          MemoryGameCache(),
           SqliteVectorStore(config.cache.sqliteVectorStorePath),
           SqlitePrefetchStatusStore(config.cache.sqlitePrefetchStatusPath),
-          NoOpSqsSender()
+          NoOpSqsSender(),
+          NoOpRequestCache()
         )
 
     val gameService =
-      GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
+      GameService(bggClient, gameCache, vectorStore, requestCache, config.cache.vectorMinRatings, () => Instant.now())
     ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, sqsSender, config)
 
   private def startServer(endpoints: ApiEndpoints, config: AppConfig): Unit =
     val serverOptions = NettySyncServerOptions.customiseInterceptors
+      .corsInterceptor(CORSInterceptor.customOrThrow[Identity](
+        CORSConfig.default.maxAge(scala.concurrent.duration.Duration(1, "day"))
+      ))
       .defaultHandlers(
         msg =>
           if msg == "Not Found" then ValuedEndpointOutput(ErrorOutput.failOutput, bgg.domain.Fail.NotFound(msg))

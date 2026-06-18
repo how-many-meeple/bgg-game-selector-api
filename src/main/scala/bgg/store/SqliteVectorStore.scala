@@ -1,32 +1,24 @@
 package bgg.store
 
-import bgg.SafeOps.{decodeJson, withStatement}
+import bgg.SafeOps.{decodeJson, resultSetIterator, withStatement}
+import bgg.SqliteStore
 import bgg.domain.GameId
 import bgg.vector.GameVector
-import com.typesafe.scalalogging.{Logger, StrictLogging}
 import io.circe.syntax.*
 
-import java.sql.{Connection, DriverManager}
+import java.sql.ResultSet
 import java.time.Instant
 
-class SqliteVectorStore(dbPath: String) extends VectorStore with AutoCloseable with StrictLogging:
-  private val conn: Connection = DriverManager.getConnection(s"jdbc:sqlite:$dbPath")
-  prepareSchema()
-
-  private given Logger = logger
-
-  def close(): Unit = conn.close()
-
-  private def prepareSchema(): Unit =
-    val sql =
+class SqliteVectorStore(dbPath: String)
+    extends SqliteStore(
+      dbPath,
       """CREATE TABLE IF NOT EXISTS game_vectors (
          game_id INTEGER NOT NULL PRIMARY KEY,
          name TEXT NOT NULL,
          vector TEXT NOT NULL,
          updated_at TEXT NOT NULL)"""
-    val stmt = conn.createStatement()
-    stmt.execute(sql)
-    stmt.close()
+    )
+    with VectorStore:
 
   def save(sv: StoredVector): Unit =
     withStatement(conn, "INSERT OR REPLACE INTO game_vectors (game_id, name, vector, updated_at) VALUES (?,?,?,?)") {
@@ -35,7 +27,7 @@ class SqliteVectorStore(dbPath: String) extends VectorStore with AutoCloseable w
         ps.setString(2, sv.name)
         ps.setString(3, sv.vector.values.asJson.noSpaces)
         ps.setString(4, sv.updatedAt.toString)
-        ps.executeUpdate()
+        ps.executeUpdate(): Unit
     }
 
   def load(id: GameId): Option[StoredVector] =
@@ -50,12 +42,12 @@ class SqliteVectorStore(dbPath: String) extends VectorStore with AutoCloseable w
   def loadAll(): List[StoredVector] =
     withStatement(conn, "SELECT game_id, name, vector, updated_at FROM game_vectors") { ps =>
       val rs = ps.executeQuery()
-      val results = Iterator.continually(rs).takeWhile(_.next()).flatMap(rowToStoredVector).toList
+      val results = resultSetIterator(rs).flatMap(rowToStoredVector).toList
       rs.close()
       results
     }
 
-  private def rowToStoredVector(rs: java.sql.ResultSet): Option[StoredVector] =
+  private def rowToStoredVector(rs: ResultSet): Option[StoredVector] =
     decodeJson[Vector[Double]](rs.getString(3), s"vector for game ${rs.getInt(1)}").map { vec =>
       StoredVector(
         gameId = GameId(rs.getInt(1)),
