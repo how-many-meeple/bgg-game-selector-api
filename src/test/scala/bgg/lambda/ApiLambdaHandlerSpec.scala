@@ -1,7 +1,7 @@
 package bgg.lambda
 
 import bgg.bggapi.{BggClient, GameService}
-import bgg.cache.MemoryGameCache
+import bgg.cache.{MemoryGameCache, NoOpRequestCache}
 import bgg.config.*
 import bgg.domain.*
 import bgg.prefetch.{PrefetchStatus, SqlitePrefetchStatusStore}
@@ -33,7 +33,7 @@ class ApiLambdaHandlerSpec extends AnyWordSpec with Matchers with BeforeAndAfter
     Files.deleteIfExists(Paths.get(vectorDb)): Unit
     prefetchStore = SqlitePrefetchStatusStore(prefetchDb)
     vectorStore = SqliteVectorStore(vectorDb)
-    gameCache = MemoryGameCache(ttlSeconds = 3600)
+    gameCache = MemoryGameCache()
 
   override def afterEach(): Unit =
     prefetchStore.close()
@@ -71,11 +71,12 @@ class ApiLambdaHandlerSpec extends AnyWordSpec with Matchers with BeforeAndAfter
   ): BggClient = new BggClient:
     def fetchCollection(username: String): Either[Fail, List[GameId]] = collectionResult
     def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = geeklistResult
+    def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
     def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = gamesResult
     def searchGames(query: String): Either[Fail, List[GameData]] = Right(Nil)
 
   private def makeHandler(bggClient: BggClient): SyncLambdaHandler[AwsRequestV1] =
-    val gameService = GameService(bggClient, gameCache, vectorStore, 50, () => Instant.now())
+    val gameService = GameService(bggClient, gameCache, vectorStore, NoOpRequestCache(), 50, () => Instant.now())
     val endpoints = ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, NoOpSqsSender(), testConfig)
     SyncLambdaHandler(endpoints.all, AwsSyncServerOptions.default)
 
@@ -209,8 +210,8 @@ class ApiLambdaHandlerSpec extends AnyWordSpec with Matchers with BeforeAndAfter
     "route POST /recommendations/from-games and return 200" in:
       val g1 = testGame(1, "Catan")
       val g2 = testGame(2, "Pandemic")
-      gameCache.save(g1)
-      gameCache.save(g2)
+      gameCache.save(g1, Instant.now())
+      gameCache.save(g2, Instant.now())
       vectorStore.save(StoredVector(GameId(1), "Catan", VectorMath.generateGameVector(g1), Instant.now()))
       vectorStore.save(StoredVector(GameId(2), "Pandemic", VectorMath.generateGameVector(g2), Instant.now()))
 

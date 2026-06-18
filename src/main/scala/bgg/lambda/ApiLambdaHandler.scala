@@ -1,7 +1,7 @@
 package bgg.lambda
 
 import bgg.bggapi.{BggXmlClient, GameService}
-import bgg.cache.DynamoDbGameCache
+import bgg.cache.{DynamoDbGameCache, DynamoDbRequestCache}
 import bgg.config.AppConfig
 import bgg.prefetch.DynamoDbPrefetchStatusStore
 import bgg.routes.{ApiEndpoints, AwsSqsSender}
@@ -43,10 +43,12 @@ object ApiLambdaHandler:
       .httpClient(UrlConnectionHttpClient.create())
       .build()
 
-    val gameCache = DynamoDbGameCache(dynamo, config.aws.dynamoGameTable, config.cache.gameCacheTtlSeconds)
+    val gameCache = DynamoDbGameCache(dynamo, config.aws.dynamoGameTable)
     val vectorStore = DynamoDbVectorStore(dynamo, config.aws.dynamoVectorTable)
+    val requestCache = DynamoDbRequestCache(dynamo, config.aws.dynamoRequestTable)
     val prefetchStore = DynamoDbPrefetchStatusStore(dynamo, config.aws.dynamoPrefetchTable)
     val sqsSender = AwsSqsSender(sqs, config.aws.prefetchSqsUrl)
-    val gameService = GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
+    val gameService =
+      GameService(bggClient, gameCache, vectorStore, requestCache, config.cache.vectorMinRatings, () => Instant.now())
 
     ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, sqsSender, config)

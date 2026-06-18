@@ -1,7 +1,7 @@
 package bgg.routes
 
 import bgg.bggapi.{BggClient, GameService}
-import bgg.cache.MemoryGameCache
+import bgg.cache.{MemoryGameCache, NoOpRequestCache}
 import bgg.config.*
 import bgg.domain.*
 import bgg.prefetch.{PrefetchStatus, SqlitePrefetchStatusStore}
@@ -37,7 +37,7 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
     Files.deleteIfExists(Paths.get(vectorDb)): Unit
     prefetchStore = SqlitePrefetchStatusStore(prefetchDb)
     vectorStore = SqliteVectorStore(vectorDb)
-    gameCache = MemoryGameCache(ttlSeconds = 3600)
+    gameCache = MemoryGameCache()
 
   override def afterEach(): Unit =
     prefetchStore.close()
@@ -46,7 +46,7 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
     Files.deleteIfExists(Paths.get(vectorDb)): Unit
 
   private def makeEndpoints(bggClient: BggClient): ApiEndpoints =
-    val gameService = GameService(bggClient, gameCache, vectorStore, 50, () => Instant.now())
+    val gameService = GameService(bggClient, gameCache, vectorStore, NoOpRequestCache(), 50, () => Instant.now())
     ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, NoOpSqsSender(), testConfig)
 
   private def makeBackend(endpoints: ApiEndpoints): Backend[Identity] =
@@ -98,10 +98,12 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
   private def stubClient(
       collectionResult: Either[Fail, List[GameId]] = Right(Nil),
       geeklistResult: Either[Fail, List[GameId]] = Right(Nil),
+      hotResult: Either[Fail, List[GameId]] = Right(Nil),
       gamesResult: Either[Fail, List[GameData]] = Right(Nil)
   ): BggClient = new BggClient:
     def fetchCollection(username: String): Either[Fail, List[GameId]] = collectionResult
     def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = geeklistResult
+    def fetchHotGames(): Either[Fail, List[GameId]] = hotResult
     def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = gamesResult
     def searchGames(query: String): Either[Fail, List[GameData]] = Right(Nil)
 
@@ -228,10 +230,73 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
 
       response.code shouldBe StatusCode.Ok
 
+  "GET /hot" should:
+    "return 200 with hot games" in:
+      val games = List(testGame(1, "Catan"), testGame(2, "Pandemic"))
+      val client = stubClient(
+        hotResult = Right(List(GameId(1), GameId(2))),
+        gamesResult = Right(games)
+      )
+      val endpoints = makeEndpoints(client)
+      val backend = makeBackend(endpoints)
+      val response = basicRequest
+        .get(uri"http://test/hot")
+        .response(asStringAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.Ok
+      val json = parseJson(response.body).getOrElse(Json.Null)
+      json.asArray.map(_.size) shouldBe Some(2)
+
+    "apply filter headers to hot games" in:
+      val games = List(
+        testGame(1, "Catan").copy(minPlayers = Some(3), maxPlayers = Some(4)),
+        testGame(2, "Pandemic").copy(minPlayers = Some(2), maxPlayers = Some(4))
+      )
+      val client = stubClient(
+        hotResult = Right(List(GameId(1), GameId(2))),
+        gamesResult = Right(games)
+      )
+      val endpoints = makeEndpoints(client)
+      val backend = makeBackend(endpoints)
+      val response = basicRequest
+        .get(uri"http://test/hot")
+        .header("Bgg-Filter-Player-Count", "2")
+        .response(asStringAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.Ok
+      val json = parseJson(response.body).getOrElse(Json.Null)
+      json.asArray.map(_.size) shouldBe Some(1)
+
+    "return empty list when BGG returns no hot games" in:
+      val client = stubClient(hotResult = Right(Nil))
+      val endpoints = makeEndpoints(client)
+      val backend = makeBackend(endpoints)
+      val response = basicRequest
+        .get(uri"http://test/hot")
+        .response(asStringAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.Ok
+      val json = parseJson(response.body).getOrElse(Json.Null)
+      json.asArray.map(_.size) shouldBe Some(0)
+
+    "return 503 when BGG rate limits" in:
+      val client = stubClient(hotResult = Left(Fail.BggRateLimited("Too many requests")))
+      val endpoints = makeEndpoints(client)
+      val backend = makeBackend(endpoints)
+      val response = basicRequest
+        .get(uri"http://test/hot")
+        .response(asStringAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.ServiceUnavailable
+
   "GET /game/:id" should:
     "return 200 with game data from cache" in:
       val game = testGame(42, "Catan")
-      gameCache.save(game)
+      gameCache.save(game, Instant.now())
       val endpoints = makeEndpoints(stubClient())
       val backend = makeBackend(endpoints)
       val response = basicRequest
@@ -270,7 +335,7 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
 
     "respect field whitelist header" in:
       val game = testGame(42, "Catan")
-      gameCache.save(game)
+      gameCache.save(game, Instant.now())
       val endpoints = makeEndpoints(stubClient())
       val backend = makeBackend(endpoints)
       val response = basicRequest
@@ -434,8 +499,8 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
     "return recommendations when games are in cache" in:
       val g1 = testGame(1, "Catan")
       val g2 = testGame(2, "Pandemic")
-      gameCache.save(g1)
-      gameCache.save(g2)
+      gameCache.save(g1, Instant.now())
+      gameCache.save(g2, Instant.now())
       vectorStore.save(StoredVector(GameId(1), "Catan", VectorMath.generateGameVector(g1), Instant.now()))
       vectorStore.save(StoredVector(GameId(2), "Pandemic", VectorMath.generateGameVector(g2), Instant.now()))
 
@@ -483,7 +548,7 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
 
     def makeProxyEndpoints(): ApiEndpoints =
       val client = stubClient()
-      val gameService = GameService(client, gameCache, vectorStore, 50, () => Instant.now())
+      val gameService = GameService(client, gameCache, vectorStore, NoOpRequestCache(), 50, () => Instant.now())
       ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, NoOpSqsSender(), testConfig)
 
     "return 400 for invalid base64 input" in:

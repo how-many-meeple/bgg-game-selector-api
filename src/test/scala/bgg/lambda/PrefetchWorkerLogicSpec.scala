@@ -1,7 +1,7 @@
 package bgg.lambda
 
 import bgg.bggapi.{BggClient, GameService}
-import bgg.cache.MemoryGameCache
+import bgg.cache.{MemoryGameCache, NoOpRequestCache}
 import bgg.domain.*
 import bgg.prefetch.{PrefetchStatus, SqlitePrefetchStatusStore}
 import bgg.store.SqliteVectorStore
@@ -25,7 +25,7 @@ class PrefetchWorkerLogicSpec extends AnyWordSpec with Matchers with BeforeAndAf
     Files.deleteIfExists(Paths.get(vectorDb)): Unit
     prefetchStore = SqlitePrefetchStatusStore(prefetchDb)
     vectorStore = SqliteVectorStore(vectorDb)
-    gameCache = MemoryGameCache(ttlSeconds = 3600)
+    gameCache = MemoryGameCache()
 
   override def afterEach(): Unit =
     prefetchStore.close()
@@ -58,11 +58,12 @@ class PrefetchWorkerLogicSpec extends AnyWordSpec with Matchers with BeforeAndAf
   ): BggClient = new BggClient:
     def fetchCollection(username: String): Either[Fail, List[GameId]] = collectionResult
     def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = geeklistResult
+    def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
     def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = gamesResult
     def searchGames(query: String): Either[Fail, List[GameData]] = Right(Nil)
 
   private def makeLogic(client: BggClient): PrefetchWorkerLogic =
-    val gameService = GameService(client, gameCache, vectorStore, 50, () => Instant.now())
+    val gameService = GameService(client, gameCache, vectorStore, NoOpRequestCache(), 50, () => Instant.now())
     PrefetchWorkerLogic(gameService, prefetchStore)
 
   "PrefetchWorkerLogic" should:
@@ -130,6 +131,7 @@ class PrefetchWorkerLogicSpec extends AnyWordSpec with Matchers with BeforeAndAf
           statusDuringFetch = prefetchStore.get(SourceType.Collection, username).map(_.status)
           Right(Nil)
         def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(Nil)
         def searchGames(query: String): Either[Fail, List[GameData]] = Right(Nil)
 
