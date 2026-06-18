@@ -18,8 +18,10 @@ object NativeBootstrap:
 
   private val corsHeaders = Map(
     "Access-Control-Allow-Origin" -> "*",
-    "Access-Control-Allow-Methods" -> "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers" -> "Content-Type, Bgg-Filter-Player-Count, Bgg-Filter-Using-Recommended-Players, Bgg-Filter-Min-Duration, Bgg-Filter-Max-Duration, Bgg-Filter-Complexity, Bgg-Filter-Min-Rating, Bgg-Filter-Mechanic, Bgg-Include-Expansions, Bgg-Field-Whitelist"
+    "Access-Control-Allow-Methods" -> "GET, HEAD, POST, OPTIONS",
+    "Access-Control-Allow-Headers" -> "Content-Type, Bgg-Filter-Player-Count, Bgg-Filter-Using-Recommended-Players, Bgg-Filter-Min-Duration, Bgg-Filter-Max-Duration, Bgg-Filter-Complexity, Bgg-Filter-Min-Rating, Bgg-Filter-Mechanic, Bgg-Include-Expansions, Bgg-Field-Whitelist",
+    "Access-Control-Max-Age" -> "86400",
+    "Vary" -> "Accept-Encoding"
   )
 
   private def buildApiRoute(): String => String =

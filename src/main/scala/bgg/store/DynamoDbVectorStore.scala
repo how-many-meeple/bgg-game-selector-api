@@ -26,7 +26,7 @@ class DynamoDbVectorStore(client: DynamoDbClient, tableName: String) extends Vec
     tryAwsCall(
       client.putItem(PutItemRequest.builder().tableName(tableName).item(item).build()),
       s"Error saving vector for game ${sv.gameId.value}"
-    )
+    ): Unit
 
   def load(id: GameId): Option[StoredVector] =
     tryAwsCall(

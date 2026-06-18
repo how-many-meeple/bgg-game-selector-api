@@ -51,4 +51,4 @@ class DynamoDbPrefetchStatusStore(client: DynamoDbClient, tableName: String)
     tryAwsCall(
       client.putItem(PutItemRequest.builder().tableName(tableName).item(item).build()),
       "Failed to write prefetch status to DynamoDB"
-    )
+    ): Unit
