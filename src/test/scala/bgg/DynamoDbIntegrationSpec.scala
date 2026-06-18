@@ -80,9 +80,9 @@ class DynamoDbIntegrationSpec extends AnyWordSpec with Matchers with BeforeAndAf
 
   "DynamoDbGameCache" should:
     "save and load a game" in:
-      val cache = DynamoDbGameCache(client, "game-cache", 3600)
+      val cache = DynamoDbGameCache(client, "game-cache")
 
-      cache.save(testGame)
+      cache.save(testGame, Instant.now())
       val loaded = cache.load(GameId(174430))
 
       loaded shouldBe defined
@@ -92,15 +92,15 @@ class DynamoDbIntegrationSpec extends AnyWordSpec with Matchers with BeforeAndAf
       loaded.get.mechanics shouldBe List("Hand Management", "Campaign")
 
     "return None for unknown game" in:
-      val cache = DynamoDbGameCache(client, "game-cache", 3600)
+      val cache = DynamoDbGameCache(client, "game-cache")
       cache.load(GameId(999999)) shouldBe None
 
     "not overwrite existing game (conditional put)" in:
-      val cache = DynamoDbGameCache(client, "game-cache", 3600)
+      val cache = DynamoDbGameCache(client, "game-cache")
       val modified = testGame.copy(name = "MODIFIED")
 
-      cache.save(testGame)
-      cache.save(modified)
+      cache.save(testGame, Instant.now())
+      cache.save(modified, Instant.now())
 
       val loaded = cache.load(GameId(174430))
       loaded.get.name shouldBe "Gloomhaven"

@@ -1,6 +1,6 @@
 package bgg.bggapi
 
-import bgg.cache.GameCache
+import bgg.cache.{GameCache, RequestCache}
 import bgg.domain.{Fail, GameData, GameId}
 import bgg.store.{StoredVector, VectorStore}
 import bgg.vector.VectorMath
@@ -8,11 +8,11 @@ import com.typesafe.scalalogging.StrictLogging
 
 import java.time.{Instant, Year}
 
-// Orchestrates fetching games — cache-first, BGG API for misses, vector sync on new games
 class GameService(
     bggClient: BggClient,
     gameCache: GameCache,
     vectorStore: VectorStore,
+    requestCache: RequestCache,
     vectorMinRatings: Int,
     clock: () => Instant
 ) extends StrictLogging:
@@ -32,6 +32,21 @@ class GameService(
   def resolveGeeklist(listId: String): Either[Fail, List[GameData]] =
     bggClient.fetchGeeklist(listId).flatMap(resolveGameIds)
 
+  private val HotListCacheKey = "hot:trending"
+  private val HotListTtlSeconds = 7L * 24 * 3600
+
+  def resolveHotGames(): Either[Fail, List[GameData]] =
+    requestCache.load[List[GameData]](HotListCacheKey) match
+      case Some(games) =>
+        logger.debug(s"Hot list served from request cache (${games.size} games)")
+        Right(games)
+      case None =>
+        bggClient.fetchHotGames().flatMap(resolveGameIds).map { games =>
+          requestCache.save(HotListCacheKey, games, HotListTtlSeconds, clock())
+          logger.info(s"Fetched and cached hot list with ${games.size} games")
+          games
+        }
+
   def search(query: String): Either[Fail, List[GameData]] =
     bggClient.searchGames(query)
 
@@ -40,7 +55,7 @@ class GameService(
     (cached, misses)
 
   private def cacheAndSync(game: GameData): Unit =
-    gameCache.save(game)
+    gameCache.save(game, clock())
     syncVector(game)
 
   private def syncVector(game: GameData): Unit =

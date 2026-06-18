@@ -21,7 +21,7 @@ class BggXmlClient(config: BggConfig, backend: SyncBackend) extends BggClient wi
     if config.accessToken.nonEmpty then Map("Authorization" -> s"Bearer ${config.accessToken}")
     else Map.empty
 
-  // BGG uses HTTP 202 to signal "try again later" for collection/geeklist requests
+  // BGG uses HTTP 202 to signal "try again later" for requests
   private def getWithRetry(url: String, params: Map[String, String] = Map.empty): Either[Fail, Elem] =
     @tailrec
     def attempt(remaining: Int): Either[Fail, Elem] =
@@ -78,6 +78,12 @@ class BggXmlClient(config: BggConfig, backend: SyncBackend) extends BggClient wi
         val items = (xml \ "item").filter(n => (n \ "@objecttype").text == "thing")
         if items.isEmpty then Left(Fail.BggListNotFound(listId))
         else Right(items.toList.map(n => GameId((n \ "@objectid").text.toInt)))
+      }
+
+  def fetchHotGames(): Either[Fail, List[GameId]] =
+    getWithRetry(s"$ApiV2Base/hot", Map("type" -> "boardgame"))
+      .map { xml =>
+        (xml \ "item").toList.flatMap(n => (n \ "@id").headOption.map(id => GameId(id.text.toInt)))
       }
 
   def searchGames(query: String): Either[Fail, List[GameData]] =

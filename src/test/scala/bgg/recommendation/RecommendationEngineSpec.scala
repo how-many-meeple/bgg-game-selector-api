@@ -20,7 +20,7 @@ class RecommendationEngineSpec extends AnyWordSpec with Matchers with BeforeAndA
   override def beforeEach(): Unit =
     Files.deleteIfExists(Paths.get(testDb)): Unit
     vectorStore = SqliteVectorStore(testDb)
-    gameCache = MemoryGameCache(ttlSeconds = 3600)
+    gameCache = MemoryGameCache()
 
   override def afterEach(): Unit =
     vectorStore.close()

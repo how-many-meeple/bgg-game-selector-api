@@ -23,16 +23,18 @@ object Username:
   extension (u: Username) def value: String = u
 
 enum SourceType:
-  case Collection, GeeKList
+  case Collection, GeeKList, Hot
   def toPathSegment: String = this match
     case Collection => "collection"
     case GeeKList   => "geeklist"
+    case Hot        => "hot"
 
 object SourceType:
   def fromString(s: String): Either[String, SourceType] = s.toLowerCase match
     case "collection" => Right(Collection)
     case "geeklist"   => Right(GeeKList)
-    case other        => Left(s"Invalid source_type '$other'. Must be one of: collection, geeklist")
+    case "hot"        => Right(Hot)
+    case other        => Left(s"Invalid source_type '$other'. Must be one of: collection, geeklist, hot")
 
 // Core game data model — mirrors the Python BoardGame.data() dict shape for cache compatibility
 case class GameData(

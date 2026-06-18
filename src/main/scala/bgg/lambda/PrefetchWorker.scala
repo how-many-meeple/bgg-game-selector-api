@@ -1,7 +1,7 @@
 package bgg.lambda
 
 import bgg.bggapi.{BggXmlClient, GameService}
-import bgg.cache.{DynamoDbGameCache, SqliteGameCache}
+import bgg.cache.{DynamoDbGameCache, DynamoDbRequestCache, NoOpRequestCache, SqliteGameCache}
 import bgg.config.{AppConfig, CacheBackend}
 import bgg.domain.{Fail, SourceType}
 import bgg.prefetch.{DynamoDbPrefetchStatusStore, PrefetchStatus, PrefetchStatusStore, SqlitePrefetchStatusStore}
@@ -33,10 +33,12 @@ object PrefetchWorkerLogic:
       .region(Region.of(config.aws.region))
       .httpClient(UrlConnectionHttpClient.create())
       .build()
-    val gameCache = DynamoDbGameCache(dynamo, config.aws.dynamoGameTable, config.cache.gameCacheTtlSeconds)
+    val gameCache = DynamoDbGameCache(dynamo, config.aws.dynamoGameTable)
     val vectorStore = DynamoDbVectorStore(dynamo, config.aws.dynamoVectorTable)
+    val requestCache = DynamoDbRequestCache(dynamo, config.aws.dynamoRequestTable)
     val prefetchStore = DynamoDbPrefetchStatusStore(dynamo, config.aws.dynamoPrefetchTable)
-    val gameService = GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
+    val gameService =
+      GameService(bggClient, gameCache, vectorStore, requestCache, config.cache.vectorMinRatings, () => Instant.now())
     PrefetchWorkerLogic(gameService, prefetchStore)
 
 class PrefetchWorkerLogic(
@@ -71,6 +73,7 @@ class PrefetchWorkerLogic(
         val result = sourceType match
           case SourceType.Collection => gameService.resolveCollection(msg.sourceId)
           case SourceType.GeeKList   => gameService.resolveGeeklist(msg.sourceId)
+          case SourceType.Hot        => gameService.resolveHotGames()
 
         result match
           case Right(_) =>
@@ -114,19 +117,34 @@ class PrefetchWorker extends RequestHandler[SQSEvent, Unit] with StrictLogging:
           .region(Region.of(config.aws.region))
           .httpClient(UrlConnectionHttpClient.create())
           .build()
-        val gameCache = DynamoDbGameCache(dynamo, config.aws.dynamoGameTable, config.cache.gameCacheTtlSeconds)
+        val gameCache = DynamoDbGameCache(dynamo, config.aws.dynamoGameTable)
         val vectorStore = DynamoDbVectorStore(dynamo, config.aws.dynamoVectorTable)
+        val requestCache = DynamoDbRequestCache(dynamo, config.aws.dynamoRequestTable)
         val prefetchStore = DynamoDbPrefetchStatusStore(dynamo, config.aws.dynamoPrefetchTable)
         val gameService =
-          GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
+          GameService(
+            bggClient,
+            gameCache,
+            vectorStore,
+            requestCache,
+            config.cache.vectorMinRatings,
+            () => Instant.now()
+          )
         (gameService, prefetchStore)
 
       case _ =>
-        val gameCache = SqliteGameCache(config.cache.sqliteGameCachePath, config.cache.gameCacheTtlSeconds)
+        val gameCache = SqliteGameCache(config.cache.sqliteGameCachePath)
         val vectorStore = SqliteVectorStore(config.cache.sqliteVectorStorePath)
         val prefetchStore = SqlitePrefetchStatusStore(config.cache.sqlitePrefetchStatusPath)
         val gameService =
-          GameService(bggClient, gameCache, vectorStore, config.cache.vectorMinRatings, () => Instant.now())
+          GameService(
+            bggClient,
+            gameCache,
+            vectorStore,
+            NoOpRequestCache(),
+            config.cache.vectorMinRatings,
+            () => Instant.now()
+          )
         (gameService, prefetchStore)
 
     PrefetchWorkerLogic(gameService, prefetchStore)

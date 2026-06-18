@@ -91,6 +91,21 @@ class ApiEndpoints(
           }
       }
 
+  // GET /hot
+  val hotEndpoint = baseEndpoint.get
+    .in("hot")
+    .in(headers)
+    .out(jsonBody[List[Json]])
+    .handle { hdrs =>
+      checkPrefetchBlock(SourceType.Hot, "trending")
+        .getOrElse {
+          val filters = HeaderFilters.fromHeaders(hdrs)
+          gameService.resolveHotGames().map { games =>
+            FieldReduction(GameFilter(games, filters), filters.fieldWhitelist)
+          }
+        }
+    }
+
   // GET /game/:id
   val gameEndpoint = baseEndpoint.get
     .in("game" / path[Int]("id"))
@@ -283,6 +298,7 @@ class ApiEndpoints(
     healthEndpoint,
     collectionEndpoint,
     geeklistEndpoint,
+    hotEndpoint,
     gameEndpoint,
     searchEndpoint,
     prefetchEndpoint,

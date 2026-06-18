@@ -1,7 +1,7 @@
 package bgg.lambda
 
 import bgg.bggapi.{BggClient, GameService}
-import bgg.cache.MemoryGameCache
+import bgg.cache.{MemoryGameCache, NoOpRequestCache}
 import bgg.domain.*
 import bgg.prefetch.{PrefetchStatus, SqlitePrefetchStatusStore}
 import bgg.store.SqliteVectorStore
@@ -32,8 +32,8 @@ class PrefetchWorkerSpec extends AnyWordSpec with Matchers with BeforeAndAfterEa
     Files.deleteIfExists(Paths.get(vectorDb)): Unit
 
   private def makeWorker(bggClient: BggClient): PrefetchWorkerLogic =
-    val gameCache = MemoryGameCache(ttlSeconds = 3600)
-    val gameService = GameService(bggClient, gameCache, vectorStore, 50, () => Instant.now())
+    val gameCache = MemoryGameCache()
+    val gameService = GameService(bggClient, gameCache, vectorStore, NoOpRequestCache(), 50, () => Instant.now())
     PrefetchWorkerLogic(gameService, prefetchStore)
 
   "PrefetchWorkerLogic" should:
@@ -100,6 +100,7 @@ class PrefetchWorkerSpec extends AnyWordSpec with Matchers with BeforeAndAfterEa
           Right(Nil)
         def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(Nil)
         def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
         def searchGames(query: String): Either[Fail, List[GameData]] = Right(Nil)
 
       val worker = makeWorker(client)
@@ -137,5 +138,6 @@ class PrefetchWorkerSpec extends AnyWordSpec with Matchers with BeforeAndAfterEa
   ): BggClient = new BggClient:
     def fetchCollection(username: String): Either[Fail, List[GameId]] = collectionResult
     def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = geeklistResult
+    def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
     def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = gamesResult
     def searchGames(query: String): Either[Fail, List[GameData]] = Right(Nil)

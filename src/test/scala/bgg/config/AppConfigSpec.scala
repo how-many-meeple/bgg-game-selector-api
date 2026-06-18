@@ -114,7 +114,7 @@ class AppConfigSpec extends AnyWordSpec with Matchers:
       ConfigFactory.invalidateCaches()
       val config = AppConfig.load()
 
-      config.bgg.timeoutSeconds shouldBe 60
+      config.bgg.timeoutSeconds shouldBe 240
       config.bgg.retries shouldBe 6
       config.bgg.retryDelaySeconds shouldBe 10
       config.cache.requestCacheTtlSeconds shouldBe 86400
