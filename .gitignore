@@ -21,6 +21,7 @@ project/metals.sbt
 # Deployment artifacts
 *.zip
 deployment/bootstrap
+samconfig.toml
 
 # PoC experiments
 poc/
