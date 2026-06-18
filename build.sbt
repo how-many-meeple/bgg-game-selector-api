@@ -3,7 +3,7 @@ val scala3Version = "3.3.8"
 
 ThisBuild / organization := "bgg"
 ThisBuild / scalaVersion := scala3Version
-ThisBuild / version      := "3.3.0"
+ThisBuild / version      := "3.4.0"
 
 ThisBuild / scalacOptions ++= Seq(
   "-Wunused:all",
