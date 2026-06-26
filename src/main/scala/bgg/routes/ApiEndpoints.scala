@@ -3,7 +3,7 @@ package bgg.routes
 import bgg.bggapi.GameService
 import bgg.cache.GameCache
 import bgg.config.AppConfig
-import bgg.domain.{Fail, GameData, GameId, PlayData, SourceType}
+import bgg.domain.{Fail, GameData, GameId, SourceType}
 import bgg.filter.GameFilter
 import bgg.prefetch.{PrefetchStatus, PrefetchStatusStore}
 import bgg.recommendation.{RecommendationEngine, RecommendedGame}
@@ -12,7 +12,7 @@ import bgg.vector.{VectorDimensions, VectorMath, MechanicVocabulary, CategoryVoc
 import com.typesafe.scalalogging.StrictLogging
 import io.circe.derivation.{Configuration, ConfiguredCodec}
 import io.circe.syntax.*
-import io.circe.Json
+import io.circe.{Encoder, Json}
 import sttp.model.{Header, StatusCode}
 import sttp.tapir.*
 import sttp.tapir.generic.auto.*
@@ -130,12 +130,33 @@ class ApiEndpoints(
         val distinctIds = plays.map(_.gameId).distinct
         val gameMap = gameCache.loadBatch(distinctIds).map(g => (g.id, g)).toMap
 
-        plays.map { p =>
-          val playJson = PlayData.encoder(p)
-          val gameJson = gameMap.get(p.gameId).map { game =>
+        plays.groupBy(_.gameId).toList.map { (gameId, gamePlays) =>
+          val totalPlays = gamePlays.map(_.quantity).sum
+          val playsArray = Json.fromValues(gamePlays.map { p =>
+            Json.obj(
+              "play_id" -> Json.fromInt(p.playId),
+              "date" -> Json.fromString(p.date),
+              "length" -> Json.fromInt(p.length),
+              "players" -> Json.fromValues(p.players.map { pl =>
+                Json.obj(
+                  "username" -> Json.fromString(pl.username),
+                  "name" -> Json.fromString(pl.name),
+                  "score" -> pl.score.filter(_.nonEmpty).fold(Json.Null)(Json.fromString),
+                  "win" -> Json.fromBoolean(pl.win)
+                )
+              })
+            )
+          })
+          val gameJson = gameMap.get(gameId).map { game =>
             FieldReduction(List(game), filters.fieldWhitelist).head
           }
-          playJson.deepMerge(Json.obj("game" -> gameJson.getOrElse(Json.Null)))
+          Json.obj(
+            "game_id" -> Encoder[GameId].apply(gameId),
+            "game_name" -> Json.fromString(gamePlays.head.gameName),
+            "total_plays" -> Json.fromInt(totalPlays),
+            "plays" -> playsArray,
+            "game" -> gameJson.getOrElse(Json.Null)
+          )
         }
       }
     }
