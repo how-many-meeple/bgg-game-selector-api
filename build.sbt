@@ -72,6 +72,28 @@ lazy val root = (project in file("."))
       case _                                        => MergeStrategy.first
     },
 
+    coverageMinimumStmtTotal := 90,
+    coverageMinimumBranchTotal := 90,
+    coverageFailOnMinimum := true,
+    coverageExcludedPackages := Seq(
+      "bgg\\.lambda\\.NativeBootstrap.*",
+      "bgg\\.lambda\\.ApiHandler.*",
+      "bgg\\.lambda\\.ApiLambdaHandler",
+      "bgg\\.lambda\\.PrefetchWorker",
+      "bgg\\.lambda\\.PrefetchWorkerLogic\\$",
+      "bgg\\.routes\\.AwsSqsSender",
+      "bgg\\.routes\\.ErrorOutput.*",
+      "bgg\\.cache\\.SqliteCacheProvider",
+      "bgg\\.cache\\.MemoryCacheProvider",
+    ).mkString(";"),
+    coverageExcludedFiles := Seq(
+      ".*DynamoDbGameCache.*",
+      ".*DynamoDbPlaysCache.*",
+      ".*DynamoDbRequestCache.*",
+      ".*DynamoDbCacheProvider.*",
+      ".*DynamoDbPrefetchStatusStore.*",
+    ).mkString(";"),
+
     Test / scalacOptions --= Seq("-Wvalue-discard", "-Wnonunit-statement"),
     Test / fork := true,
     Test / javaHome := Some(file(sys.env.getOrElse("JAVA_HOME", "/usr/lib/jvm/java-21"))),

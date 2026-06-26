@@ -214,6 +214,28 @@ class BggXmlClientSpec extends AnyWordSpec with Matchers:
 
       result shouldBe Right(Nil)
 
+  "fetchHotGames" should:
+    "parse game IDs from hot games XML" in:
+      val hotXml =
+        """<items>
+          |  <item id="174430" rank="1"/>
+          |  <item id="167791" rank="2"/>
+          |</items>""".stripMargin
+      val backend = stubBackend(body = hotXml)
+      val client = BggXmlClient(defaultConfig, backend)
+
+      val result = client.fetchHotGames()
+
+      result shouldBe Right(List(GameId(174430), GameId(167791)))
+
+    "return empty list on empty hot games response" in:
+      val backend = stubBackend(body = "<items></items>")
+      val client = BggXmlClient(defaultConfig, backend)
+
+      val result = client.fetchHotGames()
+
+      result shouldBe Right(Nil)
+
   "searchGames" should:
     "return empty list for queries shorter than 3 characters" in:
       val backend = stubBackend()
@@ -259,6 +281,57 @@ class BggXmlClientSpec extends AnyWordSpec with Matchers:
       client.searchGames("game")
 
       fetchCount shouldBe 20
+
+  "fetchPlays" should:
+    "parse plays from XML response" in:
+      val playsXml =
+        """<plays total="2" page="1">
+          |  <play id="100" date="2024-01-01" quantity="1" length="45">
+          |    <item name="Pandemic" objecttype="thing" objectid="30549"/>
+          |    <players>
+          |      <player username="alice" name="Alice" score="10" win="1"/>
+          |    </players>
+          |  </play>
+          |  <play id="101" date="2024-01-02" quantity="2" length="60">
+          |    <item name="Catan" objecttype="thing" objectid="13"/>
+          |  </play>
+          |</plays>""".stripMargin
+      val backend = stubBackend(body = playsXml)
+      val client = BggXmlClient(defaultConfig, backend)
+
+      val result = client.fetchPlays("testuser", 1)
+
+      result.isRight shouldBe true
+      val plays = result.toOption.get
+      plays should have size 2
+      plays.head.gameId shouldBe GameId(30549)
+      plays.head.players should have size 1
+
+    "use correct URL with username and page params" in:
+      var capturedUrl = ""
+      val backend = SyncBackendStub
+        .whenRequestMatchesPartial { request =>
+          capturedUrl = request.uri.toString
+          ResponseStub.adjust(
+            """<plays total="1" page="1"><play id="1" date="2024-01-01" quantity="1" length="0"><item name="X" objecttype="thing" objectid="1"/></play></plays>""",
+            StatusCode.Ok
+          )
+        }
+      val client = BggXmlClient(defaultConfig, backend)
+
+      client.fetchPlays("myuser", 3)
+
+      capturedUrl should include("xmlapi2/plays")
+      capturedUrl should include("username=myuser")
+      capturedUrl should include("page=3")
+
+    "return empty list when total is 0" in:
+      val backend = stubBackend(body = """<plays total="0" page="1"></plays>""")
+      val client = BggXmlClient(defaultConfig, backend)
+
+      val result = client.fetchPlays("nobody", 1)
+
+      result shouldBe Right(Nil)
 
   "retry logic" should:
     "retry on 202 responses" in:

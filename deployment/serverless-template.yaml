@@ -220,6 +220,12 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /health
             Method: GET
+        Hot:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /hot
+            Method: GET
         GetCollection:
           Type: Api
           Properties:
@@ -237,6 +243,12 @@ Resources:
           Properties:
             RestApiId: !Ref ApiGateway
             Path: /game/{game_id}
+            Method: GET
+        Plays:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /plays/{username}
             Method: GET
         SearchGames:
           Type: Api

@@ -1,10 +1,118 @@
 package bgg.bggapi
 
-import bgg.domain.{GameData, GameId, PlayerSuggestion}
+import bgg.domain.{GameId, PlayerSuggestion}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 
 class XmlParserSpec extends AnyWordSpec with Matchers:
+
+  "parsePlays" should:
+    "parse a complete play with players" in:
+      val xml =
+        <plays total="1" page="1">
+          <play id="12345" date="2024-03-15" quantity="1" length="90">
+            <item name="Catan" objecttype="thing" objectid="13">
+            </item>
+            <players>
+              <player username="alice" name="Alice" score="10" win="1"/>
+              <player username="bob" name="Bob" score="7" win="0"/>
+            </players>
+          </play>
+        </plays>
+
+      val result = XmlParser.parsePlays(xml)
+      result should have size 1
+
+      val play = result.head
+      play.playId shouldBe 12345
+      play.gameId shouldBe GameId(13)
+      play.gameName shouldBe "Catan"
+      play.date shouldBe "2024-03-15"
+      play.quantity shouldBe 1
+      play.length shouldBe 90
+      play.players should have size 2
+      play.players.head.username shouldBe "alice"
+      play.players.head.name shouldBe "Alice"
+      play.players.head.score shouldBe Some("10")
+      play.players.head.win shouldBe true
+      play.players(1).win shouldBe false
+
+    "parse multiple plays" in:
+      val xml =
+        <plays total="2" page="1">
+          <play id="100" date="2024-01-01" quantity="2" length="45">
+            <item name="Pandemic" objecttype="thing" objectid="30549"/>
+          </play>
+          <play id="101" date="2024-01-02" quantity="1" length="60">
+            <item name="Catan" objecttype="thing" objectid="13"/>
+          </play>
+        </plays>
+
+      val result = XmlParser.parsePlays(xml)
+      result should have size 2
+      result.map(_.playId) shouldBe List(100, 101)
+
+    "skip plays without a play id" in:
+      val xml =
+        <plays total="1" page="1">
+          <play date="2024-01-01" quantity="1" length="30">
+            <item name="Chess" objecttype="thing" objectid="171"/>
+          </play>
+        </plays>
+
+      XmlParser.parsePlays(xml) shouldBe empty
+
+    "skip plays without a game objectid" in:
+      val xml =
+        <plays total="1" page="1">
+          <play id="200" date="2024-01-01" quantity="1" length="30">
+            <item name="Unknown" objecttype="thing"/>
+          </play>
+        </plays>
+
+      XmlParser.parsePlays(xml) shouldBe empty
+
+    "default quantity to 1 and length to 0 when missing" in:
+      val xml =
+        <plays total="1" page="1">
+          <play id="300" date="2024-06-01">
+            <item name="Go" objecttype="thing" objectid="188"/>
+          </play>
+        </plays>
+
+      val result = XmlParser.parsePlays(xml)
+      result should have size 1
+      result.head.quantity shouldBe 1
+      result.head.length shouldBe 0
+
+    "handle plays with no players element" in:
+      val xml =
+        <plays total="1" page="1">
+          <play id="400" date="2024-02-01" quantity="1" length="30">
+            <item name="Solo" objecttype="thing" objectid="999"/>
+          </play>
+        </plays>
+
+      val result = XmlParser.parsePlays(xml)
+      result.head.players shouldBe empty
+
+    "handle player with empty score" in:
+      val xml =
+        <plays total="1" page="1">
+          <play id="500" date="2024-03-01" quantity="1" length="45">
+            <item name="Catan" objecttype="thing" objectid="13"/>
+            <players>
+              <player username="carl" name="Carl" score="" win="0"/>
+            </players>
+          </play>
+        </plays>
+
+      val result = XmlParser.parsePlays(xml)
+      result.head.players.head.score shouldBe None
+
+    "return empty list when no plays present" in:
+      val xml = <plays total="0" page="1"></plays>
+      XmlParser.parsePlays(xml) shouldBe empty
 
   "parseThings" should:
     "parse a single complete item" in:

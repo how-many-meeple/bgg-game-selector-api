@@ -1,8 +1,8 @@
 package bgg.routes
 
+import bgg.TestFixtures.{stubClient, testConfig, testGame}
 import bgg.bggapi.{BggClient, GameService}
-import bgg.cache.{MemoryGameCache, NoOpRequestCache}
-import bgg.config.*
+import bgg.cache.{MemoryGameCache, TestCacheProvider}
 import bgg.domain.*
 import bgg.prefetch.{PrefetchStatus, SqlitePrefetchStatusStore}
 import bgg.store.{SqliteVectorStore, StoredVector}
@@ -46,66 +46,13 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
     Files.deleteIfExists(Paths.get(vectorDb)): Unit
 
   private def makeEndpoints(bggClient: BggClient): ApiEndpoints =
-    val gameService = GameService(bggClient, gameCache, vectorStore, NoOpRequestCache(), 50, () => Instant.now())
+    val gameService = GameService(bggClient, TestCacheProvider(gameCache, vectorStore), 50, () => Instant.now())
     ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, NoOpSqsSender(), testConfig)
 
   private def makeBackend(endpoints: ApiEndpoints): Backend[Identity] =
     TapirStubInterpreter(BackendStub(IdentityMonad))
       .whenServerEndpointsRunLogic(endpoints.all)
       .backend()
-
-  private val testConfig = AppConfig(
-    bgg = BggConfig(accessToken = "", timeoutSeconds = 10, retries = 3, retryDelaySeconds = 1),
-    cache = CacheConfig(
-      backend = CacheBackend.Memory,
-      requestCacheTtlSeconds = 60,
-      gameCacheTtlSeconds = 3600,
-      vectorMinRatings = 50,
-      sqliteRequestCachePath = "",
-      sqliteGameCachePath = "",
-      sqliteVectorStorePath = "",
-      sqlitePrefetchStatusPath = ""
-    ),
-    aws = AwsConfig(
-      region = "us-east-1",
-      dynamoRequestTable = "",
-      dynamoGameTable = "",
-      dynamoVectorTable = "",
-      dynamoPrefetchTable = "",
-      prefetchSqsUrl = ""
-    ),
-    server = ServerConfig(host = "0.0.0.0", port = 8080, allowedOrigins = List("*"))
-  )
-
-  private def testGame(id: Int, name: String): GameData = GameData(
-    id = GameId(id),
-    name = name,
-    yearPublished = Some(2020),
-    minPlayers = Some(2),
-    maxPlayers = Some(4),
-    minPlayingTime = Some(30),
-    maxPlayingTime = Some(60),
-    playingTime = Some(60),
-    ratingAverage = Some(7.5),
-    ratingAverageWeight = Some(2.5),
-    expansion = false,
-    mechanics = List("Hand Management"),
-    categories = List("Fantasy"),
-    playerSuggestions = Nil,
-    usersRated = Some(500)
-  )
-
-  private def stubClient(
-      collectionResult: Either[Fail, List[GameId]] = Right(Nil),
-      geeklistResult: Either[Fail, List[GameId]] = Right(Nil),
-      hotResult: Either[Fail, List[GameId]] = Right(Nil),
-      gamesResult: Either[Fail, List[GameData]] = Right(Nil)
-  ): BggClient = new BggClient:
-    def fetchCollection(username: String): Either[Fail, List[GameId]] = collectionResult
-    def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = geeklistResult
-    def fetchHotGames(): Either[Fail, List[GameId]] = hotResult
-    def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = gamesResult
-    def searchGames(query: String): Either[Fail, List[GameData]] = Right(Nil)
 
   "GET /health" should:
     "return 200 with status ok" in:
@@ -543,12 +490,9 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
       json.hcursor.get[Int]("total_dimensions").toOption shouldBe Some(155)
 
   "GET /cors-proxy/:b64url" should:
-    def encodeUrl(url: String): String =
-      "_" + Base64.getUrlEncoder.withoutPadding.encodeToString(url.getBytes("UTF-8"))
-
     def makeProxyEndpoints(): ApiEndpoints =
       val client = stubClient()
-      val gameService = GameService(client, gameCache, vectorStore, NoOpRequestCache(), 50, () => Instant.now())
+      val gameService = GameService(client, TestCacheProvider(gameCache, vectorStore), 50, () => Instant.now())
       ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, NoOpSqsSender(), testConfig)
 
     "return 400 for invalid base64 input" in:

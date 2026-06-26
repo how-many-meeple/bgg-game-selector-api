@@ -36,6 +36,7 @@ case class AwsConfig(
     dynamoGameTable: String,
     dynamoVectorTable: String,
     dynamoPrefetchTable: String,
+    dynamoPlaysTable: String,
     prefetchSqsUrl: String
 )
 
@@ -80,6 +81,7 @@ object AppConfig:
       dynamoGameTable = c.getString("aws.dynamoGameTable"),
       dynamoVectorTable = c.getString("aws.dynamoVectorTable"),
       dynamoPrefetchTable = c.getString("aws.dynamoPrefetchTable"),
+      dynamoPlaysTable = c.getString("aws.dynamoPlaysTable"),
       prefetchSqsUrl = c.getString("aws.prefetchSqsUrl")
     )
 
