@@ -1,6 +1,6 @@
 package bgg.bggapi
 
-import bgg.domain.{GameData, GameId, PlayerSuggestion}
+import bgg.domain.{GameData, GameId, PlayData, PlayPlayer, PlayerSuggestion}
 
 import scala.xml.{Node, NodeSeq}
 
@@ -78,6 +78,40 @@ private[bggapi] object XmlParser:
         }
       }
     }
+
+  def parsePlays(xml: scala.xml.Elem): List[PlayData] =
+    (xml \ "play").toList.flatMap(parsePlay)
+
+  private def parsePlay(play: Node): Option[PlayData] =
+    val playId = (play \ "@id").headOption.flatMap(_.text.toIntOption)
+    val item = (play \ "item").headOption
+    val gameId = item.flatMap(i => (i \ "@objectid").headOption.flatMap(_.text.toIntOption))
+    val gameName = item.map(i => (i \ "@name").text).getOrElse("")
+
+    for
+      pid <- playId
+      gid <- gameId
+    yield
+      val date = (play \ "@date").text
+      val quantity = (play \ "@quantity").text.toIntOption.getOrElse(1)
+      val length = (play \ "@length").text.toIntOption.getOrElse(0)
+      val players = (play \ "players" \ "player").toList.map { p =>
+        PlayPlayer(
+          username = (p \ "@username").text,
+          name = (p \ "@name").text,
+          score = Option((p \ "@score").text).filter(_.nonEmpty),
+          win = (p \ "@win").text == "1"
+        )
+      }
+      PlayData(
+        playId = pid,
+        gameId = GameId(gid),
+        gameName = gameName,
+        date = date,
+        quantity = quantity,
+        length = length,
+        players = players
+      )
 
   private def intAttr(nodes: NodeSeq, attr: String): Option[Int] =
     nodes.headOption.flatMap(n => (n \ attr).text.toIntOption)

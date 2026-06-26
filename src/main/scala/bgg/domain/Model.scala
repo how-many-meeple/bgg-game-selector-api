@@ -160,6 +160,44 @@ case class PlayerSuggestion(
 )
 object PlayerSuggestion
 
+case class PlayPlayer(
+    username: String,
+    name: String,
+    score: Option[String],
+    win: Boolean
+)
+
+case class PlayData(
+    playId: Int,
+    gameId: GameId,
+    gameName: String,
+    date: String,
+    quantity: Int,
+    length: Int,
+    players: List[PlayPlayer]
+)
+
+object PlayData:
+  given encoder: Encoder[PlayData] = Encoder.instance { p =>
+    import io.circe.Json
+    Json.obj(
+      "play_id" -> Json.fromInt(p.playId),
+      "game_id" -> Encoder[GameId].apply(p.gameId),
+      "game_name" -> Json.fromString(p.gameName),
+      "date" -> Json.fromString(p.date),
+      "quantity" -> Json.fromInt(p.quantity),
+      "length" -> Json.fromInt(p.length),
+      "players" -> Json.fromValues(p.players.map { pl =>
+        Json.obj(
+          "username" -> Json.fromString(pl.username),
+          "name" -> Json.fromString(pl.name),
+          "score" -> pl.score.filter(_.nonEmpty).fold(Json.Null)(Json.fromString),
+          "win" -> Json.fromBoolean(pl.win)
+        )
+      })
+    )
+  }
+
 // Filters extracted from request headers
 case class GameFilters(
     playerCount: Option[Int],

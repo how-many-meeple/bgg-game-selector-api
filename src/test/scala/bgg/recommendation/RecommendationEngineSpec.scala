@@ -1,5 +1,6 @@
 package bgg.recommendation
 
+import bgg.TestFixtures.testGame
 import bgg.cache.MemoryGameCache
 import bgg.domain.*
 import bgg.store.{SqliteVectorStore, StoredVector}
@@ -26,27 +27,9 @@ class RecommendationEngineSpec extends AnyWordSpec with Matchers with BeforeAndA
     vectorStore.close()
     Files.deleteIfExists(Paths.get(testDb)): Unit
 
-  private def game(id: Int, name: String): GameData = GameData(
-    id = GameId(id),
-    name = name,
-    yearPublished = Some(2020),
-    minPlayers = Some(2),
-    maxPlayers = Some(4),
-    minPlayingTime = Some(30),
-    maxPlayingTime = Some(60),
-    playingTime = Some(60),
-    ratingAverage = Some(7.5),
-    ratingAverageWeight = Some(2.5),
-    expansion = false,
-    mechanics = List("Hand Management"),
-    categories = List("Fantasy"),
-    playerSuggestions = Nil,
-    usersRated = Some(500)
-  )
-
   "RecommendationEngine" should:
     "return empty list when vector store is empty" in:
-      val taste = VectorMath.buildTasteVector(List(game(1, "Input")))
+      val taste = VectorMath.buildTasteVector(List(testGame(1, "Input")))
       val result = RecommendationEngine.recommend(
         taste,
         vectorStore,
@@ -58,9 +41,9 @@ class RecommendationEngineSpec extends AnyWordSpec with Matchers with BeforeAndA
       result shouldBe empty
 
     "return top N similar games" in:
-      val g1 = game(1, "Catan")
-      val g2 = game(2, "Pandemic")
-      val g3 = game(3, "Chess")
+      val g1 = testGame(1, "Catan")
+      val g2 = testGame(2, "Pandemic")
+      val g3 = testGame(3, "Chess")
       vectorStore.save(StoredVector(g1.id, g1.name, VectorMath.generateGameVector(g1), Instant.now()))
       vectorStore.save(StoredVector(g2.id, g2.name, VectorMath.generateGameVector(g2), Instant.now()))
       vectorStore.save(StoredVector(g3.id, g3.name, VectorMath.generateGameVector(g3), Instant.now()))
@@ -79,7 +62,7 @@ class RecommendationEngineSpec extends AnyWordSpec with Matchers with BeforeAndA
       result.map(_.gameId.value).toSet should not contain 1
 
     "exclude specified game IDs" in:
-      val g = game(1, "Excluded")
+      val g = testGame(1, "Excluded")
       vectorStore.save(StoredVector(g.id, g.name, VectorMath.generateGameVector(g), Instant.now()))
 
       val taste = VectorMath.buildTasteVector(List(g))
@@ -94,9 +77,33 @@ class RecommendationEngineSpec extends AnyWordSpec with Matchers with BeforeAndA
 
       result.map(_.gameId.value) should not contain 1
 
+    "apply filters and skip games not in cache" in:
+      val g1 = testGame(1, "Catan").copy(minPlayers = Some(2), maxPlayers = Some(4))
+      val g2 = testGame(2, "Solo Game").copy(minPlayers = Some(1), maxPlayers = Some(1))
+      val g3 = testGame(3, "Party Game").copy(minPlayers = Some(4), maxPlayers = Some(10))
+      gameCache.save(g1, Instant.now())
+      gameCache.save(g2, Instant.now())
+      vectorStore.save(StoredVector(g1.id, g1.name, VectorMath.generateGameVector(g1), Instant.now()))
+      vectorStore.save(StoredVector(g2.id, g2.name, VectorMath.generateGameVector(g2), Instant.now()))
+      vectorStore.save(StoredVector(g3.id, g3.name, VectorMath.generateGameVector(g3), Instant.now()))
+
+      val taste = VectorMath.buildTasteVector(List(g1))
+      val filters = GameFilters.default.copy(playerCount = Some(2))
+      val result = RecommendationEngine.recommend(
+        taste,
+        vectorStore,
+        gameCache,
+        limit = 5,
+        excludeIds = Set.empty,
+        filters = filters
+      )
+
+      result.map(_.gameId) should not contain GameId(2)
+      result.map(_.gameId) should not contain GameId(3)
+
     "sort results by similarity score descending" in:
-      val g1 = game(1, "Game 1")
-      val g2 = game(2, "Game 2")
+      val g1 = testGame(1, "Game 1")
+      val g2 = testGame(2, "Game 2")
       vectorStore.save(StoredVector(g1.id, g1.name, VectorMath.generateGameVector(g1), Instant.now()))
       vectorStore.save(
         StoredVector(

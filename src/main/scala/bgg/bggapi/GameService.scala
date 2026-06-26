@@ -1,8 +1,8 @@
 package bgg.bggapi
 
-import bgg.cache.{GameCache, RequestCache}
-import bgg.domain.{Fail, GameData, GameId}
-import bgg.store.{StoredVector, VectorStore}
+import bgg.cache.CacheProvider
+import bgg.domain.{Fail, GameData, GameId, PlayData}
+import bgg.store.StoredVector
 import bgg.vector.VectorMath
 import com.typesafe.scalalogging.StrictLogging
 
@@ -10,16 +10,19 @@ import java.time.{Instant, Year}
 
 class GameService(
     bggClient: BggClient,
-    gameCache: GameCache,
-    vectorStore: VectorStore,
-    requestCache: RequestCache,
+    caches: CacheProvider,
     vectorMinRatings: Int,
     clock: () => Instant
 ) extends StrictLogging:
 
+  private val gameCache = caches.gameCache
+  private val vectorStore = caches.vectorStore
+  private val requestCache = caches.requestCache
+  private val playsCache = caches.playsCache
+
   def resolveGameIds(ids: List[GameId]): Either[Fail, List[GameData]] =
     val (cached, missing) = partitionCached(ids)
-    if missing.isEmpty then Right(cached)
+    if missing.isEmpty then Right(cached.sortBy(_.name))
     else
       bggClient.fetchGamesByIds(missing).map { fetched =>
         fetched.foreach(cacheAndSync)
@@ -50,9 +53,46 @@ class GameService(
   def search(query: String): Either[Fail, List[GameData]] =
     bggClient.searchGames(query)
 
+  def resolvePlays(username: String): Either[Fail, List[PlayData]] =
+    playsCache.load(username) match
+      case Some(plays) =>
+        logger.debug(s"Plays for $username served from cache (${plays.size} plays)")
+        Right(plays)
+      case None =>
+        fetchAllPlays(username).map { plays =>
+          playsCache.save(username, plays)
+          plays
+        }
+
+  def fetchAndCachePlays(username: String): Unit =
+    fetchAllPlays(username) match
+      case Right(plays) =>
+        playsCache.save(username, plays)
+        logger.info(s"Fetched and cached ${plays.size} plays for $username")
+      case Left(err) =>
+        logger.warn(s"Failed to fetch plays for $username: $err")
+
+  private val MaxPlayPages = 200
+
+  private def fetchAllPlays(username: String): Either[Fail, List[PlayData]] =
+    @scala.annotation.tailrec
+    def loop(page: Int, acc: List[List[PlayData]]): Either[Fail, List[PlayData]] =
+      if page > MaxPlayPages then
+        logger.warn(s"Hit max page limit ($MaxPlayPages) fetching plays for $username")
+        Right(acc.reverse.flatten)
+      else
+        bggClient.fetchPlays(username, page) match
+          case Left(err) if page == 1        => Left(err)
+          case Left(_)                       => Right(acc.reverse.flatten)
+          case Right(plays) if plays.isEmpty => Right(acc.reverse.flatten)
+          case Right(plays)                  => loop(page + 1, plays :: acc)
+    loop(1, Nil)
+
   private def partitionCached(ids: List[GameId]): (List[GameData], List[GameId]) =
-    val (misses, cached) = ids.partitionMap(id => gameCache.load(id).toRight(id))
-    (cached, misses)
+    val cached = gameCache.loadBatch(ids)
+    val cachedIds = cached.map(_.id).toSet
+    val missing = ids.filterNot(cachedIds.contains)
+    (cached, missing)
 
   private def cacheAndSync(game: GameData): Unit =
     gameCache.save(game, clock())

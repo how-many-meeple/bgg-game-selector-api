@@ -1,7 +1,7 @@
 package bgg.bggapi
 
 import bgg.config.BggConfig
-import bgg.domain.*
+import bgg.domain.{Fail, GameData, GameId, PlayData}
 import com.typesafe.scalalogging.StrictLogging
 import sttp.client4.*
 import sttp.model.StatusCode
@@ -98,3 +98,7 @@ class BggXmlClient(config: BggConfig, backend: SyncBackend) extends BggClient wi
               case Left(_)      => Nil
           }
         }
+
+  def fetchPlays(username: String, page: Int): Either[Fail, List[PlayData]] =
+    getWithRetry(s"$ApiV2Base/plays", Map("username" -> username, "page" -> page.toString))
+      .map(XmlParser.parsePlays)

@@ -3,7 +3,7 @@ package bgg.routes
 import bgg.bggapi.GameService
 import bgg.cache.GameCache
 import bgg.config.AppConfig
-import bgg.domain.*
+import bgg.domain.{Fail, GameData, GameId, PlayData, SourceType}
 import bgg.filter.GameFilter
 import bgg.prefetch.{PrefetchStatus, PrefetchStatusStore}
 import bgg.recommendation.{RecommendationEngine, RecommendedGame}
@@ -116,6 +116,27 @@ class ApiEndpoints(
       gameService.resolveGameIds(List(GameId(id))).flatMap {
         case game :: _ => Right(FieldReduction(List(game), filters.fieldWhitelist).head)
         case Nil       => Left(Fail.NotFound(s"Game $id not found"))
+      }
+    }
+
+  // GET /plays/:username
+  val playsEndpoint = baseEndpoint.get
+    .in("plays" / path[String]("username"))
+    .in(headers)
+    .out(jsonBody[List[Json]])
+    .handle { (username, hdrs) =>
+      val filters = HeaderFilters.fromHeaders(hdrs)
+      gameService.resolvePlays(username).map { plays =>
+        val distinctIds = plays.map(_.gameId).distinct
+        val gameMap = gameCache.loadBatch(distinctIds).map(g => (g.id, g)).toMap
+
+        plays.map { p =>
+          val playJson = PlayData.encoder(p)
+          val gameJson = gameMap.get(p.gameId).map { game =>
+            FieldReduction(List(game), filters.fieldWhitelist).head
+          }
+          playJson.deepMerge(Json.obj("game" -> gameJson.getOrElse(Json.Null)))
+        }
       }
     }
 
@@ -257,18 +278,16 @@ class ApiEndpoints(
               Left(Fail.IncorrectInput(s"Proxy request failed: ${e.getClass.getName}: ${e.getMessage}"))
     }
 
+  private def resolveGamesAsMap(ids: List[GameId]): Map[GameId, GameData] =
+    gameService.resolveGameIds(ids) match
+      case Right(games) => games.map(g => (g.id, g)).toMap
+      case Left(_)      => gameCache.loadBatch(ids).map(g => (g.id, g)).toMap
+
   private def resolveInputGames(gameIds: List[GameId]): List[GameData] =
-    gameService.resolveGameIds(gameIds) match
-      case Right(games) => games
-      case Left(_) =>
-        gameIds.flatMap(id => gameCache.load(id).toList)
+    resolveGamesAsMap(gameIds).values.toList
 
   private def enrichRecommendations(recommendations: List[RecommendedGame]): List[RecommendedGameJson] =
-    val recIds = recommendations.map(_.gameId)
-    val gameMap: Map[GameId, GameData] = gameService.resolveGameIds(recIds) match
-      case Right(games) => games.map(g => (g.id, g)).toMap
-      case Left(_) =>
-        recIds.flatMap(id => gameCache.load(id).map(g => (id, g))).toMap
+    val gameMap = resolveGamesAsMap(recommendations.map(_.gameId))
 
     recommendations.map { r =>
       RecommendedGameJson(
@@ -300,6 +319,7 @@ class ApiEndpoints(
     geeklistEndpoint,
     hotEndpoint,
     gameEndpoint,
+    playsEndpoint,
     searchEndpoint,
     prefetchEndpoint,
     prefetchStatusEndpoint,

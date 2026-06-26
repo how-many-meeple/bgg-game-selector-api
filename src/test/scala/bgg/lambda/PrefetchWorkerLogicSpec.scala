@@ -1,7 +1,8 @@
 package bgg.lambda
 
+import bgg.TestFixtures.{stubClient, testGame}
 import bgg.bggapi.{BggClient, GameService}
-import bgg.cache.{MemoryGameCache, NoOpRequestCache}
+import bgg.cache.{MemoryGameCache, TestCacheProvider}
 import bgg.domain.*
 import bgg.prefetch.{PrefetchStatus, SqlitePrefetchStatusStore}
 import bgg.store.SqliteVectorStore
@@ -33,37 +34,8 @@ class PrefetchWorkerLogicSpec extends AnyWordSpec with Matchers with BeforeAndAf
     Files.deleteIfExists(Paths.get(prefetchDb)): Unit
     Files.deleteIfExists(Paths.get(vectorDb)): Unit
 
-  private def testGame(id: Int, name: String): GameData = GameData(
-    id = GameId(id),
-    name = name,
-    yearPublished = Some(2020),
-    minPlayers = Some(2),
-    maxPlayers = Some(4),
-    minPlayingTime = Some(30),
-    maxPlayingTime = Some(60),
-    playingTime = Some(60),
-    ratingAverage = Some(7.5),
-    ratingAverageWeight = Some(2.5),
-    expansion = false,
-    mechanics = List("Hand Management"),
-    categories = List("Fantasy"),
-    playerSuggestions = Nil,
-    usersRated = Some(500)
-  )
-
-  private def stubClient(
-      collectionResult: Either[Fail, List[GameId]] = Right(Nil),
-      geeklistResult: Either[Fail, List[GameId]] = Right(Nil),
-      gamesResult: Either[Fail, List[GameData]] = Right(Nil)
-  ): BggClient = new BggClient:
-    def fetchCollection(username: String): Either[Fail, List[GameId]] = collectionResult
-    def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = geeklistResult
-    def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
-    def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = gamesResult
-    def searchGames(query: String): Either[Fail, List[GameData]] = Right(Nil)
-
   private def makeLogic(client: BggClient): PrefetchWorkerLogic =
-    val gameService = GameService(client, gameCache, vectorStore, NoOpRequestCache(), 50, () => Instant.now())
+    val gameService = GameService(client, TestCacheProvider(gameCache, vectorStore), 50, () => Instant.now())
     PrefetchWorkerLogic(gameService, prefetchStore)
 
   "PrefetchWorkerLogic" should:
@@ -134,6 +106,7 @@ class PrefetchWorkerLogicSpec extends AnyWordSpec with Matchers with BeforeAndAf
         def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(Nil)
         def searchGames(query: String): Either[Fail, List[GameData]] = Right(Nil)
+        def fetchPlays(username: String, page: Int): Either[Fail, List[PlayData]] = Right(Nil)
 
       val logic = makeLogic(client)
       logic.process(PrefetchMessage("collection", "testuser"))
@@ -145,6 +118,62 @@ class PrefetchWorkerLogicSpec extends AnyWordSpec with Matchers with BeforeAndAf
       val logic = makeLogic(client)
 
       noException should be thrownBy logic.process(PrefetchMessage("invalid_type", "testuser"))
+
+    "set status to Completed on successful hot games prefetch" in:
+      val games = List(testGame(1, "Catan"))
+      val hotClient = new BggClient:
+        def fetchCollection(username: String): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchHotGames(): Either[Fail, List[GameId]] = Right(List(GameId(1)))
+        def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(games)
+        def searchGames(query: String): Either[Fail, List[GameData]] = Right(Nil)
+        def fetchPlays(username: String, page: Int): Either[Fail, List[PlayData]] = Right(Nil)
+      val logic = makeLogic(hotClient)
+
+      logic.process(PrefetchMessage("hot", "trending"))
+
+      val record = prefetchStore.get(SourceType.Hot, "trending")
+      record.map(_.status) shouldBe Some(PrefetchStatus.Completed)
+
+    "handleSqsEvent should process valid SQS records" in:
+      val games = List(testGame(1, "Catan"))
+      val client = stubClient(
+        collectionResult = Right(List(GameId(1))),
+        gamesResult = Right(games)
+      )
+      val logic = makeLogic(client)
+
+      val event = """{"Records":[{"body":"{\"source_type\":\"collection\",\"source_id\":\"testuser\"}"}]}"""
+      val result = logic.handleSqsEvent(event)
+
+      result shouldBe """{"statusCode":200}"""
+      prefetchStore.get(SourceType.Collection, "testuser").map(_.status) shouldBe Some(PrefetchStatus.Completed)
+
+    "handleSqsEvent should handle invalid JSON gracefully" in:
+      val client = stubClient()
+      val logic = makeLogic(client)
+
+      val result = logic.handleSqsEvent("not json at all")
+
+      result shouldBe """{"statusCode":200}"""
+
+    "handleSqsEvent should handle invalid message body gracefully" in:
+      val client = stubClient()
+      val logic = makeLogic(client)
+
+      val event = """{"Records":[{"body":"not a valid message"}]}"""
+      val result = logic.handleSqsEvent(event)
+
+      result shouldBe """{"statusCode":200}"""
+
+    "handleSqsEvent should handle record with missing body field" in:
+      val client = stubClient()
+      val logic = makeLogic(client)
+
+      val event = """{"Records":[{"notBody":"something"}]}"""
+      val result = logic.handleSqsEvent(event)
+
+      result shouldBe """{"statusCode":200}"""
 
     "cache fetched games during prefetch" in:
       val games = List(testGame(1, "Catan"))

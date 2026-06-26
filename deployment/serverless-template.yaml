@@ -220,6 +220,12 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /health
             Method: GET
+        Hot:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /hot
+            Method: GET
         GetCollection:
           Type: Api
           Properties:

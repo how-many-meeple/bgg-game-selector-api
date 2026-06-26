@@ -118,6 +118,36 @@ class GameDataDecoderSpec extends AnyWordSpec with Matchers:
       game.playerSuggestions shouldBe empty
     }
 
+    "encode PlayData with all fields" in {
+      val play = PlayData(
+        playId = 123,
+        gameId = GameId(456),
+        gameName = "Test Game",
+        date = "2024-06-01",
+        quantity = 2,
+        length = 90,
+        players = List(
+          PlayPlayer("user1", "User One", Some("15"), win = true),
+          PlayPlayer("user2", "User Two", None, win = false)
+        )
+      )
+
+      val json = PlayData.encoder(play)
+      json.hcursor.get[Int]("play_id").toOption shouldBe Some(123)
+      json.hcursor.get[Int]("game_id").toOption shouldBe Some(456)
+      json.hcursor.get[String]("game_name").toOption shouldBe Some("Test Game")
+      json.hcursor.get[String]("date").toOption shouldBe Some("2024-06-01")
+      json.hcursor.get[Int]("quantity").toOption shouldBe Some(2)
+      json.hcursor.get[Int]("length").toOption shouldBe Some(90)
+
+      val players = json.hcursor.downField("players").as[List[io.circe.Json]].toOption.get
+      players should have size 2
+      players.head.hcursor.get[String]("username").toOption shouldBe Some("user1")
+      players.head.hcursor.get[Boolean]("win").toOption shouldBe Some(true)
+      players.head.hcursor.get[String]("score").toOption shouldBe Some("15")
+      players(1).hcursor.downField("score").focus.get.isNull shouldBe true
+    }
+
     "round-trip through encode/decode" in {
       val original = GameData(
         id = GameId(42),
