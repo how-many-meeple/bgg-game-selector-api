@@ -340,7 +340,7 @@ Resources:
     Properties:
       Name: !Sub ${EnvironmentName}-bgg-api
       StageName: !Ref EnvironmentName
-      Description: BGG Game Selector API Gateway v3
+      Description: BGG Game Selector API Gateway v3.1
       MethodSettings:
         - ResourcePath: '/*'
           HttpMethod: '*'
