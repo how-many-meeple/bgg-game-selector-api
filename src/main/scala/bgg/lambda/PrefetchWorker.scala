@@ -15,6 +15,8 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
 import sttp.client4.DefaultSyncBackend
 
+import ox.*
+
 import java.time.Instant
 import scala.jdk.CollectionConverters.*
 
@@ -79,13 +81,17 @@ class PrefetchWorkerLogic(
         prefetchStore.set(sourceType, msg.sourceId, PrefetchStatus.Processing)
 
         val result = sourceType match
-          case SourceType.Collection => gameService.resolveCollection(msg.sourceId)
-          case SourceType.GeeKList   => gameService.resolveGeeklist(msg.sourceId)
-          case SourceType.Hot        => gameService.resolveHotGames()
+          case SourceType.Collection =>
+            val (collectionResult, _) = par(
+              gameService.resolveCollection(msg.sourceId),
+              gameService.fetchAndCachePlays(msg.sourceId)
+            )
+            collectionResult
+          case SourceType.GeeKList => gameService.resolveGeeklist(msg.sourceId)
+          case SourceType.Hot      => gameService.resolveHotGames()
 
         result match
           case Right(_) =>
-            if sourceType == SourceType.Collection then gameService.fetchAndCachePlays(msg.sourceId)
             prefetchStore.set(sourceType, msg.sourceId, PrefetchStatus.Completed)
             logger.info(s"Prefetch complete for ${sourceType.toPathSegment}:${msg.sourceId}")
           case Left(Fail.BggUserNotFound(user)) =>
