@@ -122,14 +122,9 @@ class ApiEndpoints(
   // GET /plays/:username
   val playsEndpoint = baseEndpoint.get
     .in("plays" / path[String]("username"))
-    .in(headers)
     .out(jsonBody[List[Json]])
-    .handle { (username, hdrs) =>
-      val filters = HeaderFilters.fromHeaders(hdrs)
+    .handle { username =>
       gameService.resolvePlays(username).map { plays =>
-        val distinctIds = plays.map(_.gameId).distinct
-        val gameMap = gameCache.loadBatch(distinctIds).map(g => (g.id, g)).toMap
-
         plays.groupBy(_.gameId).toList.map { (gameId, gamePlays) =>
           val totalPlays = gamePlays.map(_.quantity).sum
           val playsArray = Json.fromValues(gamePlays.map { p =>
@@ -147,15 +142,11 @@ class ApiEndpoints(
               })
             )
           })
-          val gameJson = gameMap.get(gameId).map { game =>
-            FieldReduction(List(game), filters.fieldWhitelist).head
-          }
           Json.obj(
             "game_id" -> Encoder[GameId].apply(gameId),
             "game_name" -> Json.fromString(gamePlays.head.gameName),
             "total_plays" -> Json.fromInt(totalPlays),
-            "plays" -> playsArray,
-            "game" -> gameJson.getOrElse(Json.Null)
+            "plays" -> playsArray
           )
         }
       }

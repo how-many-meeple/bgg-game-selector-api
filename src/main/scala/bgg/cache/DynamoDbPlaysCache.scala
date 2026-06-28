@@ -8,9 +8,12 @@ import io.circe.{Decoder, Encoder}
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import software.amazon.awssdk.services.dynamodb.model.*
 
+import java.time.Instant
 import scala.jdk.CollectionConverters.*
 
-class DynamoDbPlaysCache(client: DynamoDbClient, tableName: String) extends PlaysCache with StrictLogging:
+class DynamoDbPlaysCache(client: DynamoDbClient, tableName: String, clock: () => Instant = () => Instant.now())
+    extends PlaysCache
+    with StrictLogging:
 
   private given Logger = logger
   private given Encoder[List[PlayData]] = Encoder.encodeList(PlayData.encoder)
@@ -38,10 +41,16 @@ class DynamoDbPlaysCache(client: DynamoDbClient, tableName: String) extends Play
     yield bgg.domain.PlayPlayer(username, name, score, win)
   }
 
+  private val TtlDays = 7L
+
   def save(username: String, plays: List[PlayData]): Unit =
+    val now = clock()
+    val ttl = now.plusSeconds(TtlDays * 24 * 3600).getEpochSecond
     val item = Map(
       "username" -> AttributeValue.fromS(username.toLowerCase),
-      "data" -> AttributeValue.fromS(plays.asJson.noSpaces)
+      "data" -> AttributeValue.fromS(plays.asJson.noSpaces),
+      "cached_at" -> AttributeValue.fromN(now.getEpochSecond.toString),
+      "ttl" -> AttributeValue.fromN(ttl.toString)
     ).asJava
 
     val request = PutItemRequest.builder().tableName(tableName).item(item).build()
@@ -62,3 +71,21 @@ class DynamoDbPlaysCache(client: DynamoDbClient, tableName: String) extends Play
     tryAwsCall(client.getItem(request), s"Error loading plays for $username")
       .filter(_.hasItem)
       .flatMap(response => decodeJson[List[PlayData]](response.item().get("data").s(), s"plays for $username"))
+
+  def isFresh(username: String, maxAgeSeconds: Long): Boolean =
+    val request = GetItemRequest
+      .builder()
+      .tableName(tableName)
+      .key(Map("username" -> AttributeValue.fromS(username.toLowerCase)).asJava)
+      .projectionExpression("cached_at")
+      .build()
+
+    tryAwsCall(client.getItem(request), s"Error checking freshness for $username")
+      .filter(_.hasItem)
+      .flatMap { response =>
+        Option(response.item().get("cached_at")).map(_.n().toLong)
+      }
+      .exists { cachedAt =>
+        val age = clock().getEpochSecond - cachedAt
+        age < maxAgeSeconds
+      }

@@ -59,6 +59,7 @@ Globals:
         DYNAMODB_GAME_TABLE: !Ref GameCacheTable
         DYNAMODB_VECTOR_TABLE: !Ref GameVectorsTable
         DYNAMODB_PREFETCH_TABLE: !Ref PrefetchStatusTable
+        DYNAMODB_PLAYS_TABLE: !Ref PlaysCacheTable
         DYNAMODB_REGION: !Ref AWS::Region
         BGG_ACCESS_TOKEN: !Ref BggAccessToken
         BGG_TIMEOUT: '240'
@@ -166,6 +167,26 @@ Resources:
         - Key: Application
           Value: bgg-game-selector
 
+  PlaysCacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${EnvironmentName}-bgg-plays
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: username
+          AttributeType: S
+      KeySchema:
+        - AttributeName: username
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Application
+          Value: bgg-game-selector
+
   # SQS Queue for prefetch jobs
   PrefetchQueue:
     Type: AWS::SQS::Queue
@@ -211,6 +232,8 @@ Resources:
             TableName: !Ref GameVectorsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref PrefetchStatusTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PlaysCacheTable
         - SQSSendMessagePolicy:
             QueueName: !GetAtt PrefetchQueue.QueueName
       Events:
@@ -317,6 +340,8 @@ Resources:
             TableName: !Ref GameVectorsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref PrefetchStatusTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PlaysCacheTable
         - SQSPollerPolicy:
             QueueName: !GetAtt PrefetchQueue.QueueName
       Events:
@@ -509,6 +534,12 @@ Outputs:
     Value: !Ref PrefetchStatusTable
     Export:
       Name: !Sub ${EnvironmentName}-bgg-prefetch-status-table
+
+  DynamoDBPlaysTableName:
+    Description: DynamoDB table name for plays cache
+    Value: !Ref PlaysCacheTable
+    Export:
+      Name: !Sub ${EnvironmentName}-bgg-plays-table
 
   PrefetchQueueUrl:
     Description: SQS queue URL for prefetch jobs

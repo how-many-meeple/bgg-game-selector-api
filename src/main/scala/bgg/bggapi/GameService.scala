@@ -64,13 +64,18 @@ class GameService(
           plays
         }
 
+  private val PlaysCacheTtlSeconds = 24L * 3600
+
   def fetchAndCachePlays(username: String): Unit =
-    fetchAllPlays(username) match
-      case Right(plays) =>
-        playsCache.save(username, plays)
-        logger.info(s"Fetched and cached ${plays.size} plays for $username")
-      case Left(err) =>
-        logger.warn(s"Failed to fetch plays for $username: $err")
+    if playsCache.isFresh(username, PlaysCacheTtlSeconds) then
+      logger.debug(s"Plays cache for $username is fresh, skipping fetch")
+    else
+      fetchAllPlays(username) match
+        case Right(plays) =>
+          playsCache.save(username, plays)
+          logger.info(s"Fetched and cached ${plays.size} plays for $username")
+        case Left(err) =>
+          logger.warn(s"Failed to fetch plays for $username: $err")
 
   private val MaxPlayPages = 200
 

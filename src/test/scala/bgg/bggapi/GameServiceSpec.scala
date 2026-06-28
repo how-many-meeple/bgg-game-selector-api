@@ -27,10 +27,11 @@ class GameServiceSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach:
     vectorStore.close()
     Files.deleteIfExists(Paths.get(vectorDb)): Unit
 
-  private class MemoryPlaysCache extends PlaysCache:
+  private class MemoryPlaysCache(fresh: Boolean = false) extends PlaysCache:
     val store: mutable.Map[String, List[PlayData]] = mutable.Map.empty
     def save(username: String, plays: List[PlayData]): Unit = store(username) = plays
     def load(username: String): Option[List[PlayData]] = store.get(username)
+    def isFresh(username: String, maxAgeSeconds: Long): Boolean = fresh && store.contains(username)
 
   private class MemoryRequestCache extends RequestCache:
     private val store: mutable.Map[String, String] = mutable.Map.empty
@@ -137,7 +138,7 @@ class GameServiceSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach:
       result shouldBe Right(List(testPlay))
 
   "fetchAndCachePlays" should:
-    "fetch and save plays to cache" in:
+    "fetch and save plays to cache when not cached" in:
       val playsCache = MemoryPlaysCache()
       val caches = TestCacheProvider(gameCache, vectorStore, playsCache = playsCache)
       val client = stubClient(playsPage1 = Right(List(testPlay)))
@@ -146,6 +147,27 @@ class GameServiceSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach:
       service.fetchAndCachePlays("dave")
 
       playsCache.store.get("dave") shouldBe Some(List(testPlay))
+
+    "skip fetch when cache is fresh" in:
+      var fetchCount = 0
+      val client = new BggClient:
+        def fetchCollection(username: String): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(Nil)
+        def searchGames(query: String): Either[Fail, List[GameData]] = Right(Nil)
+        def fetchPlays(username: String, page: Int): Either[Fail, List[PlayData]] =
+          fetchCount += 1
+          Right(List(testPlay))
+
+      val playsCache = MemoryPlaysCache(fresh = true)
+      playsCache.save("dave", List(testPlay))
+      val caches = TestCacheProvider(gameCache, vectorStore, playsCache = playsCache)
+      val service = GameService(client, caches, 50, () => Instant.now())
+
+      service.fetchAndCachePlays("dave")
+
+      fetchCount shouldBe 0
 
     "not crash when fetch fails" in:
       val playsCache = MemoryPlaysCache()
