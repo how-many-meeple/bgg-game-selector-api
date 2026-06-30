@@ -37,7 +37,8 @@ case class AwsConfig(
     dynamoVectorTable: String,
     dynamoPrefetchTable: String,
     dynamoPlaysTable: String,
-    prefetchSqsUrl: String
+    prefetchSqsUrl: String,
+    prefetchStateMachineArn: String
 )
 
 case class ServerConfig(
@@ -82,7 +83,8 @@ object AppConfig:
       dynamoVectorTable = c.getString("aws.dynamoVectorTable"),
       dynamoPrefetchTable = c.getString("aws.dynamoPrefetchTable"),
       dynamoPlaysTable = c.getString("aws.dynamoPlaysTable"),
-      prefetchSqsUrl = c.getString("aws.prefetchSqsUrl")
+      prefetchSqsUrl = c.getString("aws.prefetchSqsUrl"),
+      prefetchStateMachineArn = c.getString("aws.prefetchStateMachineArn")
     )
 
     val server = ServerConfig(

@@ -45,12 +45,20 @@
       "Resource": "*"
     },
     {
-      "Sid": "SQSManagement",
+      "Sid": "StepFunctionsManagement",
       "Effect": "Allow",
       "Action": [
-        "sqs:*"
+        "states:*"
       ],
-      "Resource": "arn:aws:sqs:*:*:production-bgg-*"
+      "Resource": "arn:aws:states:*:*:stateMachine:production-bgg-*"
+    },
+    {
+      "Sid": "EventBridgeManagement",
+      "Effect": "Allow",
+      "Action": [
+        "events:*"
+      ],
+      "Resource": "arn:aws:events:*:*:rule/production-bgg-*"
     },
     {
       "Sid": "APIGatewayManagement",

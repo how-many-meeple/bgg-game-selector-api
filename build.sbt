@@ -40,6 +40,7 @@ lazy val root = (project in file("."))
       // AWS SDK v2 — url-connection-client is sync and GraalVM-friendly (no Netty)
       "software.amazon.awssdk"       % "dynamodb"                 % "2.46.11",
       "software.amazon.awssdk"       % "sqs"                      % "2.46.11",
+      "software.amazon.awssdk"       % "sfn"                      % "2.46.11",
       "software.amazon.awssdk"       % "url-connection-client"    % "2.46.11",
       // SQLite (local dev / tests)
       "org.xerial"                   % "sqlite-jdbc"              % "3.45.1.0",
@@ -82,6 +83,7 @@ lazy val root = (project in file("."))
       "bgg\\.lambda\\.PrefetchWorker",
       "bgg\\.lambda\\.PrefetchWorkerLogic\\$",
       "bgg\\.routes\\.AwsSqsSender",
+      "bgg\\.routes\\.StepFunctionsTrigger",
       "bgg\\.routes\\.ErrorOutput.*",
       "bgg\\.cache\\.SqliteCacheProvider",
       "bgg\\.cache\\.MemoryCacheProvider",

@@ -69,10 +69,15 @@ The SAM template provisions:
 | Resource | Purpose |
 |----------|---------|
 | API Lambda | Native binary, 512 MB, 30s timeout |
-| Prefetch Worker Lambda | Native binary, 512 MB, 15m timeout, SQS-triggered |
+| Step Functions state machine | Orchestrates prefetch (collection → games → plays) |
+| CollectionFetch Lambda | Resolves game IDs from BGG (300s timeout) |
+| PlaysFetchPage Lambda | Fetches one page of plays incrementally (120s timeout) |
+| GameFetch Lambda | Fetches game details in parallel batches of 20 (300s timeout) |
+| BatchPreparer Lambda | Filters cached IDs, splits into 300-game chunks (30s timeout) |
+| StatusUpdater Lambda | Writes prefetch status transitions (10s timeout) |
 | API Gateway | REST API with rate limiting and CloudWatch logging |
-| DynamoDB tables (x4) | Request cache, game cache, vectors, prefetch status |
-| SQS queue + DLQ | Async prefetch jobs |
+| DynamoDB tables (x5) | Request cache, game cache, plays cache, vectors, prefetch status |
+| EventBridge rule | Weekly hot list warm via Step Functions |
 | CloudWatch alarms | Free-tier usage warnings |
 
 ## Cost
@@ -82,7 +87,7 @@ The SAM template provisions:
 | Lambda | 1M requests | ~500K | $0.00 |
 | API Gateway | 1M calls | ~500K | $0.00 |
 | DynamoDB | 25GB, 25 RCU/WCU | ~5GB | $0.00 |
-| SQS | 1M requests | ~10K | $0.00 |
+| Step Functions | 4,000 transitions | ~1,000 | $0.00 |
 | **Total** | | | **$0.00** |
 
 ## Updating
@@ -113,7 +118,7 @@ This deletes all resources including DynamoDB tables — cached data will be los
 
 ### Lambda Timeout
 
-The API function has a 30s timeout (API Gateway hard limit). Slow BGG fetches should use `POST /prefetch` — the worker Lambda has a 15-minute timeout.
+The API function has a 30s timeout (API Gateway hard limit). Slow BGG fetches should use `POST /prefetch` — the Step Functions state machine orchestrates individual Lambdas (each with 30s-300s timeouts) and has no overall time limit.
 
 ### Cold Start > 1s
 

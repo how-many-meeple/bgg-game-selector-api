@@ -45,20 +45,19 @@ The server starts on `http://localhost:8080`. Use `CACHE_BACKEND=memory` for eph
 
 ```
               POST /prefetch
-Client ──────────────────────────────────────────────────┐
-  │                                                      v
-  │ GET /collection, /geeklist, /recommendations   ┌──────────┐
-  v                                                │ SQS Queue│
-┌─────────────────────────┐                        └─────┬────┘
-│  API Lambda             │                              │
-│  (Tapir + Netty Sync)   │                              v
-│  GraalVM native binary  │                   ┌────────────────────┐
-└───────────┬─────────────┘                   │ Prefetch Worker    │
-            │                                 │ Lambda (15m timeout)│
-            │                                 └──────────┬─────────┘
-            v                                            │
-┌─────────────────────────┐                              │
-│  BGG XML API            │ <────────────────────────────┘
+Client ──────────────────────────────────────────────────────┐
+  │                                                          v
+  │ GET /collection, /geeklist, /recommendations   ┌─────────────────┐
+  v                                                │ Step Functions   │
+┌─────────────────────────┐                        │ (STANDARD)       │
+│  API Lambda             │                        └────────┬────────┘
+│  (Tapir + Netty Sync)   │                                 │
+│  GraalVM native binary  │         ┌───────────────────────┼──────────────┐
+└───────────┬─────────────┘         │                       │              │
+            │                  CollectionFetch         PlaysFetchPage   GameFetch
+            v                  (ID resolution)        (page loop)      (batched)
+┌─────────────────────────┐         │                       │              │
+│  BGG XML API            │ <───────┴───────────────────────┴──────────────┘
 │  (v1 geeklists, v2 all) │
 └───────────┬─────────────┘
             │
@@ -66,6 +65,7 @@ Client ────────────────────────�
 ┌───────────────────────────────────────────┐
 │  DynamoDB (prod) / SQLite (local)         │
 │  ├─ Game Cache (7 day TTL)                │
+│  ├─ Plays Cache (chunked, incremental)    │
 │  ├─ Vector Store (game embeddings)        │
 │  └─ Prefetch Status (per-status TTLs)     │
 └───────────────────────────────────────────┘
@@ -74,6 +74,7 @@ Client ────────────────────────�
 ### Caching Strategy
 
 - **Game Cache**: Individual game details cached for 7 days. Fetches from BGG on miss.
+- **Plays Cache**: Chunked per-page storage with incremental updates. Only fetches new plays since the last cached play ID.
 - **Vector Store**: Game feature vectors for the recommendation engine. Updated on cache writes when the game has enough ratings.
 - **Prefetch Status**: Tracks async BGG fetch jobs with per-status TTLs. Avoids the API Gateway 29s timeout on slow BGG responses.
 
@@ -141,13 +142,21 @@ GET /game/174430
 {"error": "Game 99999 not found"}
 ```
 
+### GET /hot
+
+Trending games from BGG's hotness list.
+
+### GET /plays/:username
+
+Play history for a BGG user, grouped by game. Includes metadata indicating whether the plays fetch is still in progress.
+
 ### GET /search/:query
 
 Search BGG for games by name (minimum 3 characters).
 
 ### POST /prefetch
 
-Queue an async BGG fetch. Returns immediately so the frontend doesn't block.
+Starts an async prefetch via Step Functions. Returns immediately so the frontend doesn't block.
 
 ```json
 {"source_type": "collection", "source_id": "username"}
@@ -204,7 +213,7 @@ All config is via environment variables (with defaults in `application.conf`):
 | `GAME_CACHE_DURATION` | `604800` | Game cache TTL (seconds) |
 | `VECTOR_MIN_RATINGS` | `100` | Min ratings for vectorization |
 | `AWS_REGION` | `us-east-1` | AWS region |
-| `PREFETCH_SQS_URL` | *(required in prod)* | SQS queue URL (API Lambda sends prefetch jobs here) |
+| `PREFETCH_STATE_MACHINE_ARN` | *(required in prod)* | Step Functions state machine ARN for prefetch |
 | `SERVER_HOST` | `0.0.0.0` | Server bind host |
 | `SERVER_PORT` | `8080` | Server bind port |
 
@@ -227,7 +236,7 @@ make run        # Run locally (fat jar, JVM mode)
 - **sttp client4** — synchronous HTTP client for BGG API
 - **Circe** — JSON codec derivation
 - **scala-xml** — BGG XML API parsing
-- **AWS SDK v2** — DynamoDB, SQS (url-connection-client for GraalVM compatibility)
+- **AWS SDK v2** — DynamoDB, Step Functions (url-connection-client for GraalVM compatibility)
 - **SQLite** — local dev/test cache backend
 - **ScalaTest + ScalaMock** — testing
 
@@ -272,9 +281,10 @@ sam deploy \
 The SAM template provisions:
 - API Gateway (rate-limited, CloudWatch logging)
 - API Lambda (native binary, 512 MB, 30s timeout)
-- Prefetch Worker Lambda (native binary, 512 MB, 15m timeout, SQS-triggered)
+- Step Functions state machine (STANDARD, orchestrates prefetch)
+- 5 worker Lambdas (CollectionFetch, PlaysFetchPage, GameFetch, BatchPreparer, StatusUpdater)
 - DynamoDB tables (PAY_PER_REQUEST, TTL-enabled)
-- SQS queue + dead-letter queue
+- EventBridge rule (weekly hot list warm)
 - CloudWatch alarms for free-tier monitoring
 
 ### Cost

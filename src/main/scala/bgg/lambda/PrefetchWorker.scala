@@ -89,6 +89,7 @@ class PrefetchWorkerLogic(
             collectionResult
           case SourceType.GeeKList => gameService.resolveGeeklist(msg.sourceId)
           case SourceType.Hot      => gameService.resolveHotGames()
+          case SourceType.Plays    => Right(Nil)
 
         result match
           case Right(_) =>

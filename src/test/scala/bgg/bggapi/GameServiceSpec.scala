@@ -32,6 +32,10 @@ class GameServiceSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach:
     def save(username: String, plays: List[PlayData]): Unit = store(username) = plays
     def load(username: String): Option[List[PlayData]] = store.get(username)
     def isFresh(username: String, maxAgeSeconds: Long): Boolean = fresh && store.contains(username)
+    def append(username: String, plays: List[PlayData]): Unit =
+      store(username) = store.getOrElse(username, Nil) ++ plays
+    def maxPlayId(username: String): Option[Int] = store.get(username).flatMap(_.map(_.playId).maxOption)
+    def touch(username: String): Unit = ()
 
   private class MemoryRequestCache extends RequestCache:
     private val store: mutable.Map[String, String] = mutable.Map.empty
@@ -53,7 +57,7 @@ class GameServiceSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach:
   private def stubClient(
       playsPage1: Either[Fail, List[PlayData]] = Right(Nil)
   ): BggClient = new BggClient:
-    def fetchCollection(username: String): Either[Fail, List[GameId]] = Right(Nil)
+    def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] = Right(Nil)
     def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
     def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
     def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(Nil)
@@ -96,7 +100,7 @@ class GameServiceSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach:
     "paginate until empty page" in:
       var pageRequests = List.empty[Int]
       val client = new BggClient:
-        def fetchCollection(username: String): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
         def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(Nil)
@@ -119,7 +123,7 @@ class GameServiceSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach:
     "stop pagination on error after first page" in:
       var pageRequests = List.empty[Int]
       val client = new BggClient:
-        def fetchCollection(username: String): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
         def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(Nil)
@@ -151,7 +155,7 @@ class GameServiceSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach:
     "skip fetch when cache is fresh" in:
       var fetchCount = 0
       val client = new BggClient:
-        def fetchCollection(username: String): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
         def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(Nil)
@@ -182,7 +186,7 @@ class GameServiceSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach:
     "cache result in request cache and serve from cache on second call" in:
       var fetchCount = 0
       val client = new BggClient:
-        def fetchCollection(username: String): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
         def fetchHotGames(): Either[Fail, List[GameId]] =
           fetchCount += 1
@@ -206,7 +210,7 @@ class GameServiceSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach:
     "vectorize a mature game with enough ratings" in:
       val matureGame = testGame(1, "Old Classic").copy(yearPublished = Some(2010), usersRated = Some(1000))
       val client = new BggClient:
-        def fetchCollection(username: String): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
         def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(List(matureGame))
@@ -223,7 +227,7 @@ class GameServiceSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach:
     "not vectorize a mature game with too few ratings" in:
       val lowRated = testGame(2, "Obscure").copy(yearPublished = Some(2010), usersRated = Some(5))
       val client = new BggClient:
-        def fetchCollection(username: String): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
         def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(List(lowRated))
@@ -241,7 +245,7 @@ class GameServiceSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach:
       val currentYear = java.time.Year.now(java.time.ZoneOffset.UTC).getValue
       val newGame = testGame(3, "Brand New").copy(yearPublished = Some(currentYear), usersRated = Some(15))
       val client = new BggClient:
-        def fetchCollection(username: String): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
         def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(List(newGame))
@@ -259,7 +263,7 @@ class GameServiceSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach:
       val currentYear = java.time.Year.now(java.time.ZoneOffset.UTC).getValue
       val tooNew = testGame(4, "Too New").copy(yearPublished = Some(currentYear), usersRated = Some(3))
       val client = new BggClient:
-        def fetchCollection(username: String): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
         def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(List(tooNew))

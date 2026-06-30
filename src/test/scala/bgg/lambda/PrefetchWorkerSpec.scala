@@ -96,7 +96,7 @@ class PrefetchWorkerSpec extends AnyWordSpec with Matchers with BeforeAndAfterEa
     "set status to Processing before fetching" in:
       var statusDuringFetch: Option[PrefetchStatus] = None
       val client = new BggClient:
-        def fetchCollection(username: String): Either[Fail, List[GameId]] =
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] =
           statusDuringFetch = prefetchStore.get(SourceType.Collection, username).map(_.status)
           Right(Nil)
         def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(Nil)
