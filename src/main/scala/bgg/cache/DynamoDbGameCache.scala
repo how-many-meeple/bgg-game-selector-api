@@ -4,6 +4,7 @@ import bgg.SafeOps.{decodeJson, tryAwsCall}
 import bgg.domain.{GameData, GameId}
 import com.typesafe.scalalogging.{Logger, StrictLogging}
 import io.circe.syntax.*
+import ox.*
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import software.amazon.awssdk.services.dynamodb.model.*
 
@@ -58,16 +59,22 @@ class DynamoDbGameCache(client: DynamoDbClient, tableName: String) extends GameC
 
   override def loadBatch(ids: List[GameId]): List[GameData] =
     if ids.isEmpty then return Nil
-    ids.distinct
-      .grouped(BatchGetMaxKeys)
-      .flatMap { chunk =>
-        fetchBatchWithRetry(
-          chunk.map(id => Map("id" -> AttributeValue.fromS(id.asString)).asJava),
-          Nil,
-          BatchGetMaxRetries
-        )
-      }
-      .toList
+    val chunks = ids.distinct.grouped(BatchGetMaxKeys).toList
+    if chunks.size <= 1 then
+      chunks.flatMap(chunk => fetchBatchWithRetry(
+        chunk.map(id => Map("id" -> AttributeValue.fromS(id.asString)).asJava), Nil, BatchGetMaxRetries
+      ))
+    else
+      supervised:
+        val forks = chunks.map { chunk =>
+          forkUnsupervised:
+            fetchBatchWithRetry(
+              chunk.map(id => Map("id" -> AttributeValue.fromS(id.asString)).asJava),
+              Nil,
+              BatchGetMaxRetries
+            )
+        }
+        forks.flatMap(_.join())
 
   @scala.annotation.tailrec
   private def fetchBatchWithRetry(

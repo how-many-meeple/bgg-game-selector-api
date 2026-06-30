@@ -22,7 +22,8 @@ class GameFetchLogic(
 ) extends StrictLogging:
 
   private val SubBatchSize = 20
-  private val Parallelism = 5
+  private val Parallelism = 3
+  private val InterRoundDelayMs = 1000L
 
   def handle(eventJson: String): String =
     val input = parseInput(eventJson)
@@ -55,15 +56,14 @@ class GameFetchLogic(
 
   private def processSubBatchesParallel(subBatches: List[List[GameId]]): List[SubBatchResult] =
     supervised:
-      subBatches
-        .grouped(Parallelism)
-        .toList
-        .flatMap { chunk =>
-          val forks = chunk.map { batch =>
-            forkUnsupervised(processSubBatch(batch))
-          }
-          forks.map(_.join())
+      val rounds = subBatches.grouped(Parallelism).toList
+      rounds.zipWithIndex.flatMap { (chunk, idx) =>
+        if idx > 0 then Thread.sleep(InterRoundDelayMs)
+        val forks = chunk.map { batch =>
+          forkUnsupervised(processSubBatch(batch))
         }
+        forks.map(_.join())
+      }
 
   private def processSubBatch(batch: List[GameId]): SubBatchResult =
     bggClient.fetchGamesByIds(batch) match

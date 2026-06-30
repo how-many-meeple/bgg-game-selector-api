@@ -47,25 +47,29 @@ class BggXmlClient(config: BggConfig, backend: SyncBackend) extends BggClient wi
             Thread.sleep(config.retryDelaySeconds * 1000L)
             attempt(remaining - 1)
           case StatusCode.TooManyRequests =>
-            Left(Fail.BggRateLimited("BGG is rate limiting requests"))
+            logger.debug(s"BGG returned 429, retrying in ${config.retryDelaySeconds * 2}s ($remaining retries left)")
+            Thread.sleep(config.retryDelaySeconds * 2000L)
+            attempt(remaining - 1)
           case code =>
             Left(Fail.IncorrectInput(s"BGG returned unexpected status $code"))
 
     attempt(maxRetries)
 
   def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] =
-    val results = ids
+    ids
       .grouped(ThingBatchSize)
       .toList
-      .flatMap { batch =>
-        val idStr = batch.map(_.value).mkString(",")
-        getWithRetry(s"$ApiV2Base/thing", Map("id" -> idStr, "stats" -> "1")) match
-          case Left(e) =>
-            logger.error(s"Failed to fetch batch $idStr: $e")
-            Nil
-          case Right(xml) => XmlParser.parseThings(xml)
+      .foldLeft[Either[Fail, List[GameData]]](Right(Nil)) { (acc, batch) =>
+        acc.flatMap { soFar =>
+          val idStr = batch.map(_.value).mkString(",")
+          getWithRetry(s"$ApiV2Base/thing", Map("id" -> idStr, "stats" -> "1")) match
+            case Left(e @ Fail.BggRateLimited(_)) => Left(e)
+            case Left(e) =>
+              logger.error(s"Failed to fetch batch $idStr: $e")
+              Right(soFar)
+            case Right(xml) => Right(soFar ++ XmlParser.parseThings(xml))
+        }
       }
-    Right(results)
 
   def fetchCollection(username: String, retries: Int = config.retries): Either[Fail, List[GameId]] =
     getWithRetry(

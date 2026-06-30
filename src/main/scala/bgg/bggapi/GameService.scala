@@ -29,11 +29,31 @@ class GameService(
         (cached ++ fetched).sortBy(_.name)
       }
 
+  private val CollectionIdsTtlSeconds = 24L * 3600
+
   def resolveCollection(username: String): Either[Fail, List[GameData]] =
-    bggClient.fetchCollection(username).flatMap(resolveGameIds)
+    val cacheKey = s"collection-ids:$username"
+    requestCache.load[List[Int]](cacheKey) match
+      case Some(ids) =>
+        logger.debug(s"Collection IDs for $username served from request cache (${ids.size} ids)")
+        resolveGameIds(ids.map(GameId(_)))
+      case None =>
+        bggClient.fetchCollection(username).flatMap { ids =>
+          requestCache.save(cacheKey, ids.map(_.value), CollectionIdsTtlSeconds, clock())
+          resolveGameIds(ids)
+        }
 
   def resolveGeeklist(listId: String): Either[Fail, List[GameData]] =
-    bggClient.fetchGeeklist(listId).flatMap(resolveGameIds)
+    val cacheKey = s"geeklist-ids:$listId"
+    requestCache.load[List[Int]](cacheKey) match
+      case Some(ids) =>
+        logger.debug(s"Geeklist IDs for $listId served from request cache (${ids.size} ids)")
+        resolveGameIds(ids.map(GameId(_)))
+      case None =>
+        bggClient.fetchGeeklist(listId).flatMap { ids =>
+          requestCache.save(cacheKey, ids.map(_.value), CollectionIdsTtlSeconds, clock())
+          resolveGameIds(ids)
+        }
 
   private val HotListCacheKey = "hot:trending"
   private val HotListTtlSeconds = 7L * 24 * 3600

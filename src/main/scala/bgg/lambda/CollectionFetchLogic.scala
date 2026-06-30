@@ -1,21 +1,33 @@
 package bgg.lambda
 
 import bgg.bggapi.BggClient
+import bgg.cache.RequestCache
 import bgg.domain.{Fail, GameId, SourceType}
 import com.typesafe.scalalogging.StrictLogging
 import io.circe.{Json, parser}
 import io.circe.syntax.*
 
+import java.time.Instant
+
 case class CollectionFetchInput(sourceType: String, sourceId: String)
 case class CollectionFetchOutput(gameIds: List[Int], sourceType: String, sourceId: String)
 
-class CollectionFetchLogic(bggClient: BggClient, retries: Int) extends StrictLogging:
+class CollectionFetchLogic(
+    bggClient: BggClient,
+    retries: Int,
+    requestCache: Option[RequestCache] = None,
+    clock: () => Instant = () => Instant.now()
+) extends StrictLogging:
+
+  private val IdsCacheTtlSeconds = 24L * 3600
 
   def handle(eventJson: String): String =
     val result = for
       input <- parseInput(eventJson)
       ids <- fetchIds(input)
-    yield CollectionFetchOutput(ids.map(_.value), input.sourceType, input.sourceId)
+    yield
+      cacheIds(input, ids)
+      CollectionFetchOutput(ids.map(_.value), input.sourceType, input.sourceId)
 
     result match
       case Right(output) =>
@@ -26,6 +38,17 @@ class CollectionFetchLogic(bggClient: BggClient, retries: Int) extends StrictLog
         ).noSpaces
       case Left(fail) =>
         throw toLambdaException(fail)
+
+  private def cacheIds(input: CollectionFetchInput, ids: List[GameId]): Unit =
+    val cacheKey = SourceType.fromString(input.sourceType).toOption match
+      case Some(SourceType.Collection) => Some(s"collection-ids:${input.sourceId}")
+      case Some(SourceType.GeeKList)   => Some(s"geeklist-ids:${input.sourceId}")
+      case _                           => None
+
+    for
+      cache <- requestCache
+      key <- cacheKey
+    do cache.save(key, ids.map(_.value), IdsCacheTtlSeconds, clock())
 
   private def parseInput(json: String): Either[Fail, CollectionFetchInput] =
     parser.parse(json).toOption
