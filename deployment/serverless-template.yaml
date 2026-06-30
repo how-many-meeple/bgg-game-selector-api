@@ -170,7 +170,7 @@ Resources:
   PlaysCacheTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub ${EnvironmentName}-bgg-plays
+      TableName: !Sub ${EnvironmentName}-bgg-plays-v2
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: username
