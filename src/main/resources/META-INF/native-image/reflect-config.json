@@ -71,7 +71,7 @@
     "queryAllPublicMethods": true
   },
   {
-    "name": "software.amazon.awssdk.services.sqs.SqsClient",
+    "name": "software.amazon.awssdk.services.sfn.SfnClient",
     "queryAllPublicMethods": true
   }
 ]

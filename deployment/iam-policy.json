@@ -89,6 +89,7 @@
       ],
       "Resource": [
         "arn:aws:logs:*:*:log-group:/aws/lambda/production-bgg-*",
+        "arn:aws:logs:*:*:log-group:/aws/states/production-bgg-*",
         "arn:aws:cloudwatch:*:*:alarm:production-bgg-*"
       ]
     },

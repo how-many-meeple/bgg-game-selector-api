@@ -67,7 +67,9 @@ class DynamoDbPlaysCache(client: DynamoDbClient, tableName: String, clock: () =>
           .asScala
           .toList
           .flatMap { item =>
-            decodeJson[List[PlayData]](item.get("data").s(), s"plays chunk for $username").getOrElse(Nil)
+            Option(item.get("data")).flatMap(attr =>
+              decodeJson[List[PlayData]](attr.s(), s"plays chunk for $username")
+            ).getOrElse(Nil)
           }
           .sortBy(_.playId)(Ordering[Int].reverse)
       }
@@ -197,7 +199,7 @@ class DynamoDbPlaysCache(client: DynamoDbClient, tableName: String, clock: () =>
       .build()
 
     tryAwsCall(client.query(request), s"Error getting next page for $username")
-      .filter(_.hasItems)
+      .filter(r => r.hasItems && !r.items().isEmpty)
       .map(_.items().get(0).get("page").n().toInt + 1)
       .getOrElse(1)
 

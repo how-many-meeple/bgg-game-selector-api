@@ -135,6 +135,7 @@ object NativeBootstrap:
     catch
       case e: Exception =>
         System.err.println(s"[bootstrap] Error processing $requestId: ${e.getMessage}")
+        e.printStackTrace(System.err)
         postError(requestId, e)
     pollLoop()
 
