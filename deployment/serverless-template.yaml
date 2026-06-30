@@ -48,7 +48,7 @@ Conditions:
 Globals:
   Function:
     Timeout: 30
-    MemorySize: 512
+    MemorySize: 1024
     Runtime: provided.al2023
     Architectures:
       - x86_64
@@ -280,6 +280,7 @@ Resources:
       Environment:
         Variables:
           LAMBDA_HANDLER: GameFetch
+          BGG_RETRIES: '20'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref GameCacheTable

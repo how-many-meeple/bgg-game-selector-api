@@ -244,9 +244,9 @@
             "Retry": [
               {
                 "ErrorEquals": ["BggRateLimitedException"],
-                "IntervalSeconds": 30,
-                "MaxAttempts": 3,
-                "BackoffRate": 2.0
+                "IntervalSeconds": 60,
+                "MaxAttempts": 5,
+                "BackoffRate": 1.5
               },
               {
                 "ErrorEquals": ["States.Timeout"],

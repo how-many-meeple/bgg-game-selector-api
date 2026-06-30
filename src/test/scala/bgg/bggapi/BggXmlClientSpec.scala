@@ -206,13 +206,13 @@ class BggXmlClientSpec extends AnyWordSpec with Matchers:
       capturedUrl should include("id=100,200,300")
       capturedUrl should include("stats=1")
 
-    "return empty list on failure for a batch" in:
+    "propagate rate limit error after retries exhausted" in:
       val backend = stubBackend(statusCode = StatusCode.TooManyRequests)
-      val client = BggXmlClient(defaultConfig.copy(retries = 1), backend)
+      val client = BggXmlClient(defaultConfig.copy(retries = 1, retryDelaySeconds = 0), backend)
 
       val result = client.fetchGamesByIds(List(GameId(1)))
 
-      result shouldBe Right(Nil)
+      result shouldBe Left(Fail.BggRateLimited("BGG rate limit exceeded after retries"))
 
   "fetchHotGames" should:
     "parse game IDs from hot games XML" in:

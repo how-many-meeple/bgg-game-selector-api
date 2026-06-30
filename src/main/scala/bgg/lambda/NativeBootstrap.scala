@@ -13,9 +13,12 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import sttp.client4.DefaultSyncBackend
 import sttp.tapir.serverless.aws.lambda.*
 
+import java.io.ByteArrayOutputStream
 import java.net.{HttpURLConnection, URI}
 import java.nio.charset.StandardCharsets
 import java.time.Instant
+import java.util.Base64
+import java.util.zip.GZIPOutputStream
 
 object NativeBootstrap:
 
@@ -55,6 +58,10 @@ object NativeBootstrap:
           body = ""
         ).asJson.noSpaces
       else
+        val acceptsGzip = parse(eventJson).toOption
+          .flatMap(_.hcursor.downField("headers").as[Map[String, String]].toOption)
+          .exists(h => h.getOrElse("Accept-Encoding", h.getOrElse("accept-encoding", "")).contains("gzip"))
+
         val response = jsonDecode[AwsRequestV1](eventJson) match
           case Right(v1) => apiRoute(v1.toV2)
           case Left(err) =>
@@ -64,7 +71,13 @@ object NativeBootstrap:
               headers = Map("Content-Type" -> "application/json"),
               body = s"""{"error":"Failed to parse event: ${err.getMessage}"}"""
             )
-        response.copy(headers = response.headers ++ corsHeaders).asJson.noSpaces
+        val withCors = response.copy(headers = response.headers ++ corsHeaders)
+        val isJsonResponse = withCors.headers.get("Content-Type").exists(_.contains("application/json"))
+        val compressed =
+          if acceptsGzip && isJsonResponse && withCors.body.length > 1024 then
+            gzipResponse(withCors)
+          else withCors
+        compressed.asJson.noSpaces
 
   private def buildWorkerRoute(): String => String =
     val worker = PrefetchWorkerLogic.create()
@@ -74,7 +87,12 @@ object NativeBootstrap:
     val config = AppConfig.load()
     val httpBackend = DefaultSyncBackend()
     val bggClient = BggXmlClient(config.bgg, httpBackend)
-    val logic = CollectionFetchLogic(bggClient, config.bgg.retries)
+    val dynamo = DynamoDbClient.builder()
+      .region(Region.of(config.aws.region))
+      .httpClient(UrlConnectionHttpClient.create())
+      .build()
+    val requestCache = bgg.cache.DynamoDbRequestCache(dynamo, config.aws.dynamoRequestTable)
+    val logic = CollectionFetchLogic(bggClient, config.bgg.retries, Some(requestCache))
     eventJson => logic.handle(eventJson)
 
   private def buildPlaysFetchPageRoute(): String => String =
@@ -160,6 +178,20 @@ object NativeBootstrap:
       writeBody(conn, errorBody)
       conn.getResponseCode: Unit
     }
+
+  private def gzipResponse(response: AwsResponse): AwsResponse =
+    val rawBytes =
+      if response.isBase64Encoded then Base64.getDecoder.decode(response.body)
+      else response.body.getBytes(StandardCharsets.UTF_8)
+    val baos = ByteArrayOutputStream()
+    val gzip = GZIPOutputStream(baos)
+    gzip.write(rawBytes)
+    gzip.close()
+    response.copy(
+      isBase64Encoded = true,
+      headers = response.headers + ("Content-Encoding" -> "gzip"),
+      body = Base64.getEncoder.encodeToString(baos.toByteArray)
+    )
 
   private def withConnection[T](url: String, method: String)(f: HttpURLConnection => T): T =
     val conn = URI.create(url).toURL.openConnection().asInstanceOf[HttpURLConnection]
