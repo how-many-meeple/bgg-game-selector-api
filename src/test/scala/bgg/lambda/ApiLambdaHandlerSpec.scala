@@ -5,7 +5,7 @@ import bgg.bggapi.{BggClient, GameService}
 import bgg.cache.{MemoryGameCache, TestCacheProvider}
 import bgg.domain.*
 import bgg.prefetch.{PrefetchStatus, SqlitePrefetchStatusStore}
-import bgg.routes.{ApiEndpoints, NoOpSqsSender}
+import bgg.routes.{ApiEndpoints, NoOpPrefetchTrigger}
 import bgg.store.{SqliteVectorStore, StoredVector}
 import bgg.vector.VectorMath
 import io.circe.generic.auto.*
@@ -43,7 +43,7 @@ class ApiLambdaHandlerSpec extends AnyWordSpec with Matchers with BeforeAndAfter
 
   private def makeHandler(bggClient: BggClient): SyncLambdaHandler[AwsRequestV1] =
     val gameService = GameService(bggClient, TestCacheProvider(gameCache, vectorStore), 50, () => Instant.now())
-    val endpoints = ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, NoOpSqsSender(), testConfig)
+    val endpoints = ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, NoOpPrefetchTrigger(), testConfig)
     SyncLambdaHandler(endpoints.all, AwsSyncServerOptions.default)
 
   private def sendEvent(handler: SyncLambdaHandler[AwsRequestV1], eventJson: String): (Int, Json) =

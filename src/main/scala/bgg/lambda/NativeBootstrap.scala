@@ -1,12 +1,21 @@
 package bgg.lambda
 
+import bgg.bggapi.BggXmlClient
+import bgg.cache.DynamoDbCacheProvider
+import bgg.config.AppConfig
+import bgg.prefetch.DynamoDbPrefetchStatusStore
 import io.circe.generic.auto.*
 import io.circe.parser.{decode as jsonDecode, parse}
 import io.circe.syntax.*
+import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
+import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient
+import sttp.client4.DefaultSyncBackend
 import sttp.tapir.serverless.aws.lambda.*
 
 import java.net.{HttpURLConnection, URI}
 import java.nio.charset.StandardCharsets
+import java.time.Instant
 
 object NativeBootstrap:
 
@@ -14,12 +23,17 @@ object NativeBootstrap:
   private lazy val handler = sys.env.getOrElse("LAMBDA_HANDLER", "api")
   private lazy val route = handler match
     case h if h.contains("PrefetchWorker") => buildWorkerRoute()
+    case "CollectionFetch"                 => buildCollectionFetchRoute()
+    case "PlaysFetchPage"                  => buildPlaysFetchPageRoute()
+    case "GameFetch"                       => buildGameFetchRoute()
+    case "BatchPreparer"                   => buildBatchPreparerRoute()
+    case "StatusUpdater"                   => buildStatusUpdaterRoute()
     case _                                 => buildApiRoute()
 
   private val corsHeaders = Map(
     "Access-Control-Allow-Origin" -> "*",
     "Access-Control-Allow-Methods" -> "GET, HEAD, POST, OPTIONS",
-    "Access-Control-Allow-Headers" -> "Content-Type, Bgg-Filter-Player-Count, Bgg-Filter-Using-Recommended-Players, Bgg-Filter-Min-Duration, Bgg-Filter-Max-Duration, Bgg-Filter-Complexity, Bgg-Filter-Min-Rating, Bgg-Filter-Mechanic, Bgg-Include-Expansions, Bgg-Field-Whitelist",
+    "Access-Control-Allow-Headers" -> "Content-Type, Bgg-Filter-Player-Count, Bgg-Filter-Using-Recommended-Players, Bgg-Filter-Min-Duration, Bgg-Filter-Max-Duration, Bgg-Filter-Complexity, Bgg-Filter-Min-Rating, Bgg-Filter-Mechanic, Bgg-Include-Expansions, Bgg-Field-Whitelist, Bgg-Plays-Meta",
     "Access-Control-Max-Age" -> "86400",
     "Vary" -> "Accept-Encoding"
   )
@@ -55,6 +69,58 @@ object NativeBootstrap:
   private def buildWorkerRoute(): String => String =
     val worker = PrefetchWorkerLogic.create()
     eventJson => worker.handleSqsEvent(eventJson)
+
+  private def buildCollectionFetchRoute(): String => String =
+    val config = AppConfig.load()
+    val httpBackend = DefaultSyncBackend()
+    val bggClient = BggXmlClient(config.bgg, httpBackend)
+    val logic = CollectionFetchLogic(bggClient, config.bgg.retries)
+    eventJson => logic.handle(eventJson)
+
+  private def buildPlaysFetchPageRoute(): String => String =
+    val config = AppConfig.load()
+    val httpBackend = DefaultSyncBackend()
+    val bggClient = BggXmlClient(config.bgg, httpBackend)
+    val dynamo = DynamoDbClient.builder()
+      .region(Region.of(config.aws.region))
+      .httpClient(UrlConnectionHttpClient.create())
+      .build()
+    val caches = DynamoDbCacheProvider(dynamo, config.aws)
+    val prefetchStore = DynamoDbPrefetchStatusStore(dynamo, config.aws.dynamoPrefetchTable)
+    val logic = PlaysFetchPageLogic(bggClient, caches.playsCache, prefetchStore)
+    eventJson => logic.handle(eventJson)
+
+  private def buildGameFetchRoute(): String => String =
+    val config = AppConfig.load()
+    val httpBackend = DefaultSyncBackend()
+    val bggClient = BggXmlClient(config.bgg, httpBackend)
+    val dynamo = DynamoDbClient.builder()
+      .region(Region.of(config.aws.region))
+      .httpClient(UrlConnectionHttpClient.create())
+      .build()
+    val caches = DynamoDbCacheProvider(dynamo, config.aws)
+    val logic = GameFetchLogic(bggClient, caches, config.cache.vectorMinRatings, () => Instant.now())
+    eventJson => logic.handle(eventJson)
+
+  private def buildBatchPreparerRoute(): String => String =
+    val config = AppConfig.load()
+    val dynamo = DynamoDbClient.builder()
+      .region(Region.of(config.aws.region))
+      .httpClient(UrlConnectionHttpClient.create())
+      .build()
+    val caches = DynamoDbCacheProvider(dynamo, config.aws)
+    val logic = BatchPreparerLogic(caches.gameCache)
+    eventJson => logic.handle(eventJson)
+
+  private def buildStatusUpdaterRoute(): String => String =
+    val config = AppConfig.load()
+    val dynamo = DynamoDbClient.builder()
+      .region(Region.of(config.aws.region))
+      .httpClient(UrlConnectionHttpClient.create())
+      .build()
+    val prefetchStore = DynamoDbPrefetchStatusStore(dynamo, config.aws.dynamoPrefetchTable)
+    val logic = StatusUpdaterLogic(prefetchStore)
+    eventJson => logic.handle(eventJson)
 
   def main(args: Array[String]): Unit =
     System.err.println(s"[bootstrap] Starting handler=$handler")

@@ -47,7 +47,7 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
 
   private def makeEndpoints(bggClient: BggClient): ApiEndpoints =
     val gameService = GameService(bggClient, TestCacheProvider(gameCache, vectorStore), 50, () => Instant.now())
-    ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, NoOpSqsSender(), testConfig)
+    ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, NoOpPrefetchTrigger(), testConfig)
 
   private def makeBackend(endpoints: ApiEndpoints): Backend[Identity] =
     TapirStubInterpreter(BackendStub(IdentityMonad))
@@ -493,7 +493,7 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
     def makeProxyEndpoints(): ApiEndpoints =
       val client = stubClient()
       val gameService = GameService(client, TestCacheProvider(gameCache, vectorStore), 50, () => Instant.now())
-      ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, NoOpSqsSender(), testConfig)
+      ApiEndpoints(gameService, gameCache, vectorStore, prefetchStore, NoOpPrefetchTrigger(), testConfig)
 
     "return 400 for invalid base64 input" in:
       val endpoints = makeProxyEndpoints()

@@ -67,7 +67,7 @@ Globals:
         BGG_RETRY_DELAY: '10'
         REQUEST_CACHE_DURATION: '86400'
         GAME_CACHE_DURATION: '604800'
-        PREFETCH_SQS_URL: !Ref PrefetchQueue
+        PREFETCH_SQS_URL: ''
 
 Resources:
   # IAM Role for API Gateway to write CloudWatch Logs (Account-level, one-time setup)
@@ -175,9 +175,13 @@ Resources:
       AttributeDefinitions:
         - AttributeName: username
           AttributeType: S
+        - AttributeName: page
+          AttributeType: N
       KeySchema:
         - AttributeName: username
           KeyType: HASH
+        - AttributeName: page
+          KeyType: RANGE
       TimeToLiveSpecification:
         AttributeName: ttl
         Enabled: true
@@ -187,32 +191,168 @@ Resources:
         - Key: Application
           Value: bgg-game-selector
 
-  # SQS Queue for prefetch jobs
-  PrefetchQueue:
-    Type: AWS::SQS::Queue
+  # Step Functions State Machine for prefetch orchestration
+  PrefetchStateMachine:
+    Type: AWS::Serverless::StateMachine
     Properties:
-      QueueName: !Sub ${EnvironmentName}-bgg-prefetch-queue
-      VisibilityTimeout: 960
-      MessageRetentionPeriod: 3600
-      RedrivePolicy:
-        deadLetterTargetArn: !GetAtt PrefetchDeadLetterQueue.Arn
-        maxReceiveCount: 3
+      Name: !Sub ${EnvironmentName}-bgg-prefetch
+      DefinitionUri: ./prefetch-state-machine.asl.json
+      DefinitionSubstitutions:
+        CollectionFetchArn: !GetAtt CollectionFetchFunction.Arn
+        PlaysFetchPageArn: !GetAtt PlaysFetchPageFunction.Arn
+        GameFetchArn: !GetAtt GameFetchFunction.Arn
+        BatchPreparerArn: !GetAtt BatchPreparerFunction.Arn
+        StatusUpdaterArn: !GetAtt StatusUpdaterFunction.Arn
+      Type: STANDARD
+      Logging:
+        Level: ERROR
+        IncludeExecutionData: false
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt PrefetchStateMachineLogGroup.Arn
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref CollectionFetchFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref PlaysFetchPageFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref GameFetchFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref BatchPreparerFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref StatusUpdaterFunction
+        - CloudWatchLogsFullAccess
       Tags:
-        - Key: Environment
-          Value: !Ref EnvironmentName
-        - Key: Application
-          Value: bgg-game-selector
+        Environment: !Ref EnvironmentName
 
-  PrefetchDeadLetterQueue:
-    Type: AWS::SQS::Queue
+  PrefetchStateMachineLogGroup:
+    Type: AWS::Logs::LogGroup
     Properties:
-      QueueName: !Sub ${EnvironmentName}-bgg-prefetch-dlq
-      MessageRetentionPeriod: 86400
+      LogGroupName: !Sub /aws/states/${EnvironmentName}-bgg-prefetch
+      RetentionInDays: 7
+
+  # Step Functions worker Lambdas
+  CollectionFetchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${EnvironmentName}-bgg-collection-fetch
+      CodeUri: ./bgg-api-native.zip
+      Handler: bgg.lambda.CollectionFetch
+      Description: Fetches game IDs from BGG collection/geeklist/hot
+      Timeout: 300
+      Environment:
+        Variables:
+          LAMBDA_HANDLER: CollectionFetch
+          BGG_RETRIES: '20'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RequestCacheTable
       Tags:
-        - Key: Environment
-          Value: !Ref EnvironmentName
-        - Key: Application
-          Value: bgg-game-selector
+        Environment: !Ref EnvironmentName
+
+  PlaysFetchPageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${EnvironmentName}-bgg-plays-fetch-page
+      CodeUri: ./bgg-api-native.zip
+      Handler: bgg.lambda.PlaysFetchPage
+      Description: Fetches one page of plays and appends to cache
+      Timeout: 120
+      Environment:
+        Variables:
+          LAMBDA_HANDLER: PlaysFetchPage
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PlaysCacheTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PrefetchStatusTable
+      Tags:
+        Environment: !Ref EnvironmentName
+
+  GameFetchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${EnvironmentName}-bgg-game-fetch
+      CodeUri: ./bgg-api-native.zip
+      Handler: bgg.lambda.GameFetch
+      Description: Fetches game details in parallel batches of 20
+      Timeout: 300
+      Environment:
+        Variables:
+          LAMBDA_HANDLER: GameFetch
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameCacheTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameVectorsTable
+      Tags:
+        Environment: !Ref EnvironmentName
+
+  BatchPreparerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${EnvironmentName}-bgg-batch-preparer
+      CodeUri: ./bgg-api-native.zip
+      Handler: bgg.lambda.BatchPreparer
+      Description: Filters cached games and splits IDs into 300-chunks
+      Timeout: 30
+      Environment:
+        Variables:
+          LAMBDA_HANDLER: BatchPreparer
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref GameCacheTable
+      Tags:
+        Environment: !Ref EnvironmentName
+
+  StatusUpdaterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${EnvironmentName}-bgg-status-updater
+      CodeUri: ./bgg-api-native.zip
+      Handler: bgg.lambda.StatusUpdater
+      Description: Updates prefetch status in DynamoDB
+      Timeout: 10
+      Environment:
+        Variables:
+          LAMBDA_HANDLER: StatusUpdater
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PrefetchStatusTable
+      Tags:
+        Environment: !Ref EnvironmentName
+
+  # EventBridge rule for weekly hot list cache warming
+  WeeklyHotListWarmRule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: cron(0 4 ? * MON *)
+      Description: Warm the hot games cache every Monday at 4am UTC
+      Targets:
+        - Id: PrefetchStateMachine
+          Arn: !GetAtt PrefetchStateMachine.Arn
+          RoleArn: !GetAtt EventBridgeStepFunctionsRole.Arn
+          Input: '{"sourceType":"hot","sourceId":"trending"}'
+
+  EventBridgeStepFunctionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}-bgg-eventbridge-sfn-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StartExecution
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: states:StartExecution
+                Resource: !GetAtt PrefetchStateMachine.Arn
 
   # API Lambda — GraalVM native binary, custom runtime (provided.al2023)
   # SyncLambdaHandler decodes API Gateway REST API events directly via tapir-aws-lambda-core.
@@ -223,6 +363,10 @@ Resources:
       CodeUri: ./bgg-api-native.zip
       Handler: bgg.lambda.ApiLambdaHandler
       Description: BGG Game Selector API v3 - Scala/Tapir native Lambda
+
+      Environment:
+        Variables:
+          PREFETCH_STATE_MACHINE_ARN: !GetAtt PrefetchStateMachine.Arn
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref RequestCacheTable
@@ -234,8 +378,10 @@ Resources:
             TableName: !Ref PrefetchStatusTable
         - DynamoDBCrudPolicy:
             TableName: !Ref PlaysCacheTable
-        - SQSSendMessagePolicy:
-            QueueName: !GetAtt PrefetchQueue.QueueName
+        - Statement:
+            - Effect: Allow
+              Action: states:StartExecution
+              Resource: !GetAtt PrefetchStateMachine.Arn
       Events:
         HealthCheck:
           Type: Api
@@ -319,45 +465,6 @@ Resources:
       Tags:
         Environment: !Ref EnvironmentName
 
-  # Worker Lambda — triggered by SQS, custom runtime with LAMBDA_HANDLER to select worker path
-  PrefetchWorkerFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub ${EnvironmentName}-bgg-prefetch-worker
-      CodeUri: ./bgg-api-native.zip
-      Handler: bgg.lambda.PrefetchWorker
-      Description: BGG prefetch worker v3 — fetches BGG data async and warms the cache
-      Timeout: 900
-      Environment:
-        Variables:
-          LAMBDA_HANDLER: PrefetchWorker
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref RequestCacheTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref GameCacheTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref GameVectorsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref PrefetchStatusTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref PlaysCacheTable
-        - SQSPollerPolicy:
-            QueueName: !GetAtt PrefetchQueue.QueueName
-      Events:
-        PrefetchQueueTrigger:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt PrefetchQueue.Arn
-            BatchSize: 1
-        WeeklyHotListWarm:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 4 ? * MON *)
-            Description: Warm the hot games cache every Monday at 4am UTC
-            Input: '{"Records":[{"body":"{\"source_type\":\"hot\",\"source_id\":\"trending\"}"}]}'
-      Tags:
-        Environment: !Ref EnvironmentName
 
   # API Gateway
   ApiGateway:
@@ -505,11 +612,11 @@ Outputs:
     Export:
       Name: !Sub ${EnvironmentName}-bgg-function-arn
 
-  WorkerFunctionArn:
-    Description: Prefetch Worker Lambda Function ARN
-    Value: !GetAtt PrefetchWorkerFunction.Arn
+  PrefetchStateMachineArn:
+    Description: Prefetch Step Functions State Machine ARN
+    Value: !GetAtt PrefetchStateMachine.Arn
     Export:
-      Name: !Sub ${EnvironmentName}-bgg-worker-function-arn
+      Name: !Sub ${EnvironmentName}-bgg-prefetch-state-machine-arn
 
   DynamoDBRequestTableName:
     Description: DynamoDB table name for request cache
@@ -541,14 +648,3 @@ Outputs:
     Export:
       Name: !Sub ${EnvironmentName}-bgg-plays-table
 
-  PrefetchQueueUrl:
-    Description: SQS queue URL for prefetch jobs
-    Value: !Ref PrefetchQueue
-    Export:
-      Name: !Sub ${EnvironmentName}-bgg-prefetch-queue-url
-
-  PrefetchDeadLetterQueueUrl:
-    Description: SQS dead letter queue URL for failed prefetch jobs
-    Value: !Ref PrefetchDeadLetterQueue
-    Export:
-      Name: !Sub ${EnvironmentName}-bgg-prefetch-dlq-url

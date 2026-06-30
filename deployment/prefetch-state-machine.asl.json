@@ -1,0 +1,308 @@
+{
+  "Comment": "BGG Prefetch State Machine — orchestrates collection/plays/game fetching",
+  "StartAt": "SetStatusProcessing",
+  "States": {
+    "SetStatusProcessing": {
+      "Type": "Task",
+      "Resource": "${StatusUpdaterArn}",
+      "Parameters": {
+        "sourceType.$": "$.sourceType",
+        "sourceId.$": "$.sourceId",
+        "status": "processing"
+      },
+      "ResultPath": null,
+      "Next": "RouteBySourceType",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "SetStatusFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "RouteBySourceType": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.sourceType",
+          "StringEquals": "collection",
+          "Next": "CollectionWorkflow"
+        },
+        {
+          "Variable": "$.sourceType",
+          "StringEquals": "geeklist",
+          "Next": "FetchIds"
+        },
+        {
+          "Variable": "$.sourceType",
+          "StringEquals": "hot",
+          "Next": "FetchIds"
+        }
+      ],
+      "Default": "SetStatusFailed"
+    },
+
+    "CollectionWorkflow": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "FetchCollectionIds",
+          "States": {
+            "FetchCollectionIds": {
+              "Type": "Task",
+              "Resource": "${CollectionFetchArn}",
+              "Parameters": {
+                "sourceType.$": "$.sourceType",
+                "sourceId.$": "$.sourceId"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": ["BggRateLimitedException"],
+                  "IntervalSeconds": 30,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2.0
+                },
+                {
+                  "ErrorEquals": ["States.Timeout"],
+                  "IntervalSeconds": 60,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 1.5
+                }
+              ],
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "InitPlaysLoop",
+          "States": {
+            "InitPlaysLoop": {
+              "Type": "Pass",
+              "Parameters": {
+                "username.$": "$.sourceId",
+                "page": 1,
+                "sourceType.$": "$.sourceType",
+                "sourceId.$": "$.sourceId"
+              },
+              "Next": "FetchPlaysPage"
+            },
+            "FetchPlaysPage": {
+              "Type": "Task",
+              "Resource": "${PlaysFetchPageArn}",
+              "Retry": [
+                {
+                  "ErrorEquals": ["BggRateLimitedException"],
+                  "IntervalSeconds": 30,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Next": "CheckPlaysDone"
+            },
+            "CheckPlaysDone": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.done",
+                  "BooleanEquals": true,
+                  "Next": "PlaysDone"
+                }
+              ],
+              "Default": "PrepareNextPlaysPage"
+            },
+            "PrepareNextPlaysPage": {
+              "Type": "Pass",
+              "Parameters": {
+                "username.$": "$.username",
+                "page.$": "$.nextPage",
+                "sourceType.$": "$.sourceType",
+                "sourceId.$": "$.sourceId",
+                "cachedMaxPlayId.$": "$.cachedMaxPlayId"
+              },
+              "Next": "FetchPlaysPage"
+            },
+            "PlaysDone": {
+              "Type": "Pass",
+              "End": true
+            }
+          }
+        }
+      ],
+      "ResultPath": "$.parallelResults",
+      "Next": "ExtractGameIds",
+      "Catch": [
+        {
+          "ErrorEquals": ["BggUserNotFoundException"],
+          "Next": "SetStatusNotFound",
+          "ResultPath": "$.error"
+        },
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "SetStatusFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "FetchIds": {
+      "Type": "Task",
+      "Resource": "${CollectionFetchArn}",
+      "Parameters": {
+        "sourceType.$": "$.sourceType",
+        "sourceId.$": "$.sourceId"
+      },
+      "ResultPath": "$.fetchResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["BggRateLimitedException"],
+          "IntervalSeconds": 30,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        },
+        {
+          "ErrorEquals": ["States.Timeout"],
+          "IntervalSeconds": 60,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.5
+        }
+      ],
+      "Next": "ExtractGameIdsFromFetch",
+      "Catch": [
+        {
+          "ErrorEquals": ["BggUserNotFoundException", "BggListNotFoundException"],
+          "Next": "SetStatusNotFound",
+          "ResultPath": "$.error"
+        },
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "SetStatusFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "ExtractGameIdsFromFetch": {
+      "Type": "Pass",
+      "Parameters": {
+        "sourceType.$": "$.sourceType",
+        "sourceId.$": "$.sourceId",
+        "gameIds.$": "$.fetchResult.gameIds"
+      },
+      "Next": "PrepareBatches"
+    },
+
+    "ExtractGameIds": {
+      "Type": "Pass",
+      "Parameters": {
+        "sourceType.$": "$.sourceType",
+        "sourceId.$": "$.sourceId",
+        "gameIds.$": "$.parallelResults[0].gameIds"
+      },
+      "Next": "PrepareBatches"
+    },
+
+    "PrepareBatches": {
+      "Type": "Task",
+      "Resource": "${BatchPreparerArn}",
+      "ResultPath": "$.batches",
+      "Next": "CheckBatchesEmpty",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "SetStatusFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "CheckBatchesEmpty": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.batches[0]",
+          "IsPresent": false,
+          "Next": "SetStatusCompleted"
+        }
+      ],
+      "Default": "ProcessGameBatches"
+    },
+
+    "ProcessGameBatches": {
+      "Type": "Map",
+      "ItemsPath": "$.batches",
+      "MaxConcurrency": 1,
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
+        "StartAt": "FetchGameBatch",
+        "States": {
+          "FetchGameBatch": {
+            "Type": "Task",
+            "Resource": "${GameFetchArn}",
+            "Retry": [
+              {
+                "ErrorEquals": ["BggRateLimitedException"],
+                "IntervalSeconds": 30,
+                "MaxAttempts": 3,
+                "BackoffRate": 2.0
+              },
+              {
+                "ErrorEquals": ["States.Timeout"],
+                "IntervalSeconds": 60,
+                "MaxAttempts": 2,
+                "BackoffRate": 1.5
+              }
+            ],
+            "End": true
+          }
+        }
+      },
+      "ResultPath": "$.batchResults",
+      "Next": "SetStatusCompleted",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "SetStatusFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "SetStatusCompleted": {
+      "Type": "Task",
+      "Resource": "${StatusUpdaterArn}",
+      "Parameters": {
+        "sourceType.$": "$.sourceType",
+        "sourceId.$": "$.sourceId",
+        "status": "completed"
+      },
+      "End": true
+    },
+
+    "SetStatusNotFound": {
+      "Type": "Task",
+      "Resource": "${StatusUpdaterArn}",
+      "Parameters": {
+        "sourceType.$": "$.sourceType",
+        "sourceId.$": "$.sourceId",
+        "status": "not_found",
+        "reason.$": "$.error.Cause"
+      },
+      "End": true
+    },
+
+    "SetStatusFailed": {
+      "Type": "Task",
+      "Resource": "${StatusUpdaterArn}",
+      "Parameters": {
+        "sourceType.$": "$.sourceType",
+        "sourceId.$": "$.sourceId",
+        "status": "failed",
+        "reason.$": "$.error.Cause"
+      },
+      "End": true
+    }
+  }
+}

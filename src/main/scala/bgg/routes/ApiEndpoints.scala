@@ -44,7 +44,7 @@ class ApiEndpoints(
     gameCache: GameCache,
     vectorStore: VectorStore,
     prefetchStore: PrefetchStatusStore,
-    sqsSender: SqsSender,
+    prefetchTrigger: PrefetchTrigger,
     config: AppConfig
 ) extends StrictLogging:
 
@@ -122,10 +122,12 @@ class ApiEndpoints(
   // GET /plays/:username
   val playsEndpoint = baseEndpoint.get
     .in("plays" / path[String]("username"))
-    .out(jsonBody[List[Json]])
-    .handle { username =>
+    .in(headers)
+    .out(jsonBody[Json])
+    .handle { (username, hdrs) =>
+      val includeMeta = hdrs.exists(_.name.equalsIgnoreCase("Bgg-Plays-Meta"))
       gameService.resolvePlays(username).map { plays =>
-        plays.groupBy(_.gameId).toList.map { (gameId, gamePlays) =>
+        val groupedPlays = plays.groupBy(_.gameId).toList.map { (gameId, gamePlays) =>
           val totalPlays = gamePlays.map(_.quantity).sum
           val playsArray = Json.fromValues(gamePlays.map { p =>
             Json.obj(
@@ -149,8 +151,27 @@ class ApiEndpoints(
             "plays" -> playsArray
           )
         }
+        if includeMeta then
+          Json.obj(
+            "plays" -> Json.fromValues(groupedPlays),
+            "meta" -> playsMetadata(username)
+          )
+        else
+          Json.fromValues(groupedPlays)
       }
     }
+
+  private def playsMetadata(username: String): Json =
+    prefetchStore.get(SourceType.Plays, username) match
+      case Some(record) if record.status == PrefetchStatus.Processing =>
+        val pagesFetched = record.reason.stripPrefix("page:").toIntOption.getOrElse(0)
+        Json.obj(
+          "complete" -> Json.fromBoolean(false),
+          "pages_fetched" -> Json.fromInt(pagesFetched),
+          "retry_after_seconds" -> Json.fromInt(30)
+        )
+      case _ =>
+        Json.obj("complete" -> Json.fromBoolean(true))
 
   // GET /search/:query
   val searchEndpoint = baseEndpoint.get
@@ -175,7 +196,7 @@ class ApiEndpoints(
             val status = prefetchStore.get(sourceType, sourceId).map(_.status.dbKey).getOrElse("pending")
             Right((StatusCode.Ok, PrefetchResponse(status, "Already queued or recently completed")))
           else
-            sqsSender.send(sourceType, sourceId)
+            prefetchTrigger.trigger(sourceType, sourceId)
             prefetchStore.set(sourceType, sourceId, PrefetchStatus.Pending)
             Right((StatusCode.Accepted, PrefetchResponse("pending", "Queued for prefetch")))
     }

@@ -4,12 +4,12 @@ import bgg.bggapi.{BggXmlClient, GameService}
 import bgg.cache.DynamoDbCacheProvider
 import bgg.config.AppConfig
 import bgg.prefetch.DynamoDbPrefetchStatusStore
-import bgg.routes.{ApiEndpoints, AwsSqsSender}
+import bgg.routes.{ApiEndpoints, StepFunctionsTrigger}
 import io.circe.generic.auto.*
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient
-import software.amazon.awssdk.services.sqs.SqsClient
+import software.amazon.awssdk.services.sfn.SfnClient
 import sttp.client4.DefaultSyncBackend
 import sttp.tapir.server.ServerEndpoint
 import sttp.tapir.serverless.aws.lambda.*
@@ -36,7 +36,7 @@ object ApiLambdaHandler:
       .httpClient(UrlConnectionHttpClient.create())
       .build()
 
-    val sqs = SqsClient
+    val sfn = SfnClient
       .builder()
       .region(Region.of(config.aws.region))
       .httpClient(UrlConnectionHttpClient.create())
@@ -44,7 +44,7 @@ object ApiLambdaHandler:
 
     val caches = DynamoDbCacheProvider(dynamo, config.aws)
     val prefetchStore = DynamoDbPrefetchStatusStore(dynamo, config.aws.dynamoPrefetchTable)
-    val sqsSender = AwsSqsSender(sqs, config.aws.prefetchSqsUrl)
+    val prefetchTrigger = StepFunctionsTrigger(sfn, config.aws.prefetchStateMachineArn)
     val gameService = GameService(bggClient, caches, config.cache.vectorMinRatings, () => Instant.now())
 
-    ApiEndpoints(gameService, caches.gameCache, caches.vectorStore, prefetchStore, sqsSender, config)
+    ApiEndpoints(gameService, caches.gameCache, caches.vectorStore, prefetchStore, prefetchTrigger, config)

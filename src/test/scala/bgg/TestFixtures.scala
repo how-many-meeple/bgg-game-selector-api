@@ -31,7 +31,7 @@ object TestFixtures:
       gamesResult: Either[Fail, List[GameData]] = Right(Nil),
       playsResult: Either[Fail, List[PlayData]] = Right(Nil)
   ): BggClient = new BggClient:
-    def fetchCollection(username: String): Either[Fail, List[GameId]] = collectionResult
+    def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] = collectionResult
     def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = geeklistResult
     def fetchHotGames(): Either[Fail, List[GameId]] = hotResult
     def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = gamesResult
@@ -57,7 +57,8 @@ object TestFixtures:
       dynamoVectorTable = "",
       dynamoPrefetchTable = "",
       dynamoPlaysTable = "",
-      prefetchSqsUrl = ""
+      prefetchSqsUrl = "",
+      prefetchStateMachineArn = ""
     ),
     server = ServerConfig(host = "0.0.0.0", port = 8080, allowedOrigins = List("*"))
   )

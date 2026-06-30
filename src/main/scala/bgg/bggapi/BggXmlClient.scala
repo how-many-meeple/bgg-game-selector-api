@@ -7,6 +7,7 @@ import sttp.client4.*
 import sttp.model.StatusCode
 
 import scala.annotation.tailrec
+import scala.concurrent.duration.*
 import scala.xml.{Elem, XML}
 
 class BggXmlClient(config: BggConfig, backend: SyncBackend) extends BggClient with StrictLogging:
@@ -16,13 +17,17 @@ class BggXmlClient(config: BggConfig, backend: SyncBackend) extends BggClient wi
   private val ThingBatchSize = 20
   private val MinSearchLength = 3
   private val SearchResultLimit = 20
+  private val readTimeout = config.timeoutSeconds.seconds
 
   private def authHeaders: Map[String, String] =
     if config.accessToken.nonEmpty then Map("Authorization" -> s"Bearer ${config.accessToken}")
     else Map.empty
 
-  // BGG uses HTTP 202 to signal "try again later" for requests
-  private def getWithRetry(url: String, params: Map[String, String] = Map.empty): Either[Fail, Elem] =
+  private def getWithRetry(
+      url: String,
+      params: Map[String, String] = Map.empty,
+      maxRetries: Int = config.retries
+  ): Either[Fail, Elem] =
     @tailrec
     def attempt(remaining: Int): Either[Fail, Elem] =
       if remaining <= 0 then Left(Fail.BggRateLimited("BGG rate limit exceeded after retries"))
@@ -30,6 +35,7 @@ class BggXmlClient(config: BggConfig, backend: SyncBackend) extends BggClient wi
         val response = basicRequest
           .get(uri"$url".withParams(params))
           .headers(authHeaders)
+          .readTimeout(readTimeout)
           .response(asStringAlways)
           .send(backend)
 
@@ -37,7 +43,7 @@ class BggXmlClient(config: BggConfig, backend: SyncBackend) extends BggClient wi
           case StatusCode.Ok =>
             Right(XML.loadString(response.body))
           case StatusCode.Accepted =>
-            logger.debug(s"BGG returned 202, retrying in ${config.retryDelaySeconds}s")
+            logger.debug(s"BGG returned 202, retrying in ${config.retryDelaySeconds}s ($remaining retries left)")
             Thread.sleep(config.retryDelaySeconds * 1000L)
             attempt(remaining - 1)
           case StatusCode.TooManyRequests =>
@@ -45,7 +51,7 @@ class BggXmlClient(config: BggConfig, backend: SyncBackend) extends BggClient wi
           case code =>
             Left(Fail.IncorrectInput(s"BGG returned unexpected status $code"))
 
-    attempt(config.retries)
+    attempt(maxRetries)
 
   def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] =
     val results = ids
@@ -61,10 +67,11 @@ class BggXmlClient(config: BggConfig, backend: SyncBackend) extends BggClient wi
       }
     Right(results)
 
-  def fetchCollection(username: String): Either[Fail, List[GameId]] =
+  def fetchCollection(username: String, retries: Int = config.retries): Either[Fail, List[GameId]] =
     getWithRetry(
       s"$ApiV2Base/collection",
-      Map("username" -> username, "own" -> "1", "excludesubtype" -> "boardgameexpansion")
+      Map("username" -> username, "own" -> "1", "excludesubtype" -> "boardgameexpansion"),
+      maxRetries = retries
     )
       .flatMap { xml =>
         val items = (xml \ "item")

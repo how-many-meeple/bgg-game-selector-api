@@ -43,7 +43,8 @@ All permissions are scoped to `production-bgg-*` resources:
 | Lambda | Function management | `production-bgg-*` functions |
 | API Gateway | REST API management | All REST APIs (can't scope by name) |
 | DynamoDB | Table management + TTL | `production-bgg-*` tables |
-| SQS | Queue management | `production-bgg-*` queues |
+| Step Functions | State machine management | `production-bgg-*` state machines |
+| EventBridge | Rule management | `production-bgg-*` rules |
 | CloudWatch | Logs + alarms | `production-bgg-*` resources |
 | IAM | Role creation | `production-bgg-*` and SAM roles |
 | S3 | Deployment artifacts | SAM-managed buckets only |
