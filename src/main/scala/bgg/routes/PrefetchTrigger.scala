@@ -17,7 +17,8 @@ class StepFunctionsTrigger(sfnClient: SfnClient, stateMachineArn: String) extend
       "sourceType" -> Json.fromString(sourceType.toPathSegment),
       "sourceId" -> Json.fromString(sourceId)
     ).noSpaces
-    val name = s"${sourceType.toPathSegment}-${sourceId}-${Instant.now().toEpochMilli}"
+    val sanitizedId = sourceId.replaceAll("[^a-zA-Z0-9_-]", "_")
+    val name = s"${sourceType.toPathSegment}-${sanitizedId}-${Instant.now().toEpochMilli}"
     sfnClient.startExecution(
       StartExecutionRequest.builder()
         .stateMachineArn(stateMachineArn)
