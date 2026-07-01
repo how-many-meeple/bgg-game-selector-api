@@ -27,7 +27,7 @@
         {
           "Variable": "$.sourceType",
           "StringEquals": "collection",
-          "Next": "CollectionWorkflow"
+          "Next": "FetchCollectionIds"
         },
         {
           "Variable": "$.sourceType",
@@ -43,33 +43,111 @@
       "Default": "SetStatusFailed"
     },
 
-    "CollectionWorkflow": {
+    "FetchCollectionIds": {
+      "Type": "Task",
+      "Resource": "${CollectionFetchArn}",
+      "Parameters": {
+        "sourceType.$": "$.sourceType",
+        "sourceId.$": "$.sourceId"
+      },
+      "ResultPath": "$.collectionResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["BggRateLimitedException"],
+          "IntervalSeconds": 30,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        },
+        {
+          "ErrorEquals": ["States.Timeout"],
+          "IntervalSeconds": 60,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.5
+        }
+      ],
+      "Next": "CollectionParallelWork",
+      "Catch": [
+        {
+          "ErrorEquals": ["BggUserNotFoundException"],
+          "Next": "SetStatusNotFound",
+          "ResultPath": "$.error"
+        },
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "SetStatusFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "CollectionParallelWork": {
       "Type": "Parallel",
       "Branches": [
         {
-          "StartAt": "FetchCollectionIds",
+          "StartAt": "ExtractCollectionGameIds",
           "States": {
-            "FetchCollectionIds": {
-              "Type": "Task",
-              "Resource": "${CollectionFetchArn}",
+            "ExtractCollectionGameIds": {
+              "Type": "Pass",
               "Parameters": {
+                "gameIds.$": "$.collectionResult.gameIds",
                 "sourceType.$": "$.sourceType",
                 "sourceId.$": "$.sourceId"
               },
-              "Retry": [
+              "Next": "PrepareCollectionBatches"
+            },
+            "PrepareCollectionBatches": {
+              "Type": "Task",
+              "Resource": "${BatchPreparerArn}",
+              "ResultPath": "$.batches",
+              "Next": "CheckCollectionBatchesEmpty"
+            },
+            "CheckCollectionBatchesEmpty": {
+              "Type": "Choice",
+              "Choices": [
                 {
-                  "ErrorEquals": ["BggRateLimitedException"],
-                  "IntervalSeconds": 30,
-                  "MaxAttempts": 3,
-                  "BackoffRate": 2.0
-                },
-                {
-                  "ErrorEquals": ["States.Timeout"],
-                  "IntervalSeconds": 60,
-                  "MaxAttempts": 2,
-                  "BackoffRate": 1.5
+                  "Variable": "$.batches[0]",
+                  "IsPresent": false,
+                  "Next": "CollectionGameFetchDone"
                 }
               ],
+              "Default": "ProcessCollectionGameBatches"
+            },
+            "ProcessCollectionGameBatches": {
+              "Type": "Map",
+              "ItemsPath": "$.batches",
+              "MaxConcurrency": 1,
+              "ItemProcessor": {
+                "ProcessorConfig": {
+                  "Mode": "INLINE"
+                },
+                "StartAt": "FetchCollectionGameBatch",
+                "States": {
+                  "FetchCollectionGameBatch": {
+                    "Type": "Task",
+                    "Resource": "${GameFetchArn}",
+                    "Retry": [
+                      {
+                        "ErrorEquals": ["BggRateLimitedException"],
+                        "IntervalSeconds": 60,
+                        "MaxAttempts": 5,
+                        "BackoffRate": 1.5
+                      },
+                      {
+                        "ErrorEquals": ["States.Timeout"],
+                        "IntervalSeconds": 60,
+                        "MaxAttempts": 2,
+                        "BackoffRate": 1.5
+                      }
+                    ],
+                    "End": true
+                  }
+                }
+              },
+              "ResultPath": "$.batchResults",
+              "End": true
+            },
+            "CollectionGameFetchDone": {
+              "Type": "Pass",
               "End": true
             }
           }
@@ -130,13 +208,8 @@
         }
       ],
       "ResultPath": "$.parallelResults",
-      "Next": "ExtractGameIds",
+      "Next": "SetStatusCompleted",
       "Catch": [
-        {
-          "ErrorEquals": ["BggUserNotFoundException"],
-          "Next": "SetStatusNotFound",
-          "ResultPath": "$.error"
-        },
         {
           "ErrorEquals": ["States.ALL"],
           "Next": "SetStatusFailed",
@@ -188,16 +261,6 @@
         "sourceType.$": "$.sourceType",
         "sourceId.$": "$.sourceId",
         "gameIds.$": "$.fetchResult.gameIds"
-      },
-      "Next": "PrepareBatches"
-    },
-
-    "ExtractGameIds": {
-      "Type": "Pass",
-      "Parameters": {
-        "sourceType.$": "$.sourceType",
-        "sourceId.$": "$.sourceId",
-        "gameIds.$": "$.parallelResults[0].gameIds"
       },
       "Next": "PrepareBatches"
     },
