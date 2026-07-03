@@ -44,19 +44,21 @@ class DynamoDbPlaysCache(client: DynamoDbClient, tableName: String, clock: () =>
   private val TtlDays = 7L
   private val MetaPage = 0
 
-  def save(username: String, plays: List[PlayData]): Unit =
+  def save(rawUsername: String, plays: List[PlayData]): Unit =
+    val username = CacheKeys.normalize(rawUsername)
     val now = clock()
     val ttl = now.plusSeconds(TtlDays * 24 * 3600).getEpochSecond
     deleteAllPages(username)
     val maxId = plays.map(_.playId).maxOption.getOrElse(0)
     putPage(username, MetaPage, plays, now, ttl, maxId)
 
-  def load(username: String): Option[List[PlayData]] =
+  def load(rawUsername: String): Option[List[PlayData]] =
+    val username = CacheKeys.normalize(rawUsername)
     val request = QueryRequest
       .builder()
       .tableName(tableName)
       .keyConditionExpression("username = :u")
-      .expressionAttributeValues(Map(":u" -> AttributeValue.fromS(username.toLowerCase)).asJava)
+      .expressionAttributeValues(Map(":u" -> AttributeValue.fromS(username)).asJava)
       .build()
 
     tryAwsCall(client.query(request), s"Error loading plays for $username")
@@ -67,21 +69,22 @@ class DynamoDbPlaysCache(client: DynamoDbClient, tableName: String, clock: () =>
           .asScala
           .toList
           .flatMap { item =>
-            Option(item.get("data")).flatMap(attr =>
-              decodeJson[List[PlayData]](attr.s(), s"plays chunk for $username")
-            ).getOrElse(Nil)
+            Option(item.get("data"))
+              .flatMap(attr => decodeJson[List[PlayData]](attr.s(), s"plays chunk for $username"))
+              .getOrElse(Nil)
           }
           .sortBy(_.playId)(Ordering[Int].reverse)
       }
       .filter(_.nonEmpty)
 
-  def isFresh(username: String, maxAgeSeconds: Long): Boolean =
+  def isFresh(rawUsername: String, maxAgeSeconds: Long): Boolean =
+    val username = CacheKeys.normalize(rawUsername)
     val request = GetItemRequest
       .builder()
       .tableName(tableName)
       .key(
         Map(
-          "username" -> AttributeValue.fromS(username.toLowerCase),
+          "username" -> AttributeValue.fromS(username),
           "page" -> AttributeValue.fromN(MetaPage.toString)
         ).asJava
       )
@@ -98,20 +101,22 @@ class DynamoDbPlaysCache(client: DynamoDbClient, tableName: String, clock: () =>
         age < maxAgeSeconds
       }
 
-  def append(username: String, plays: List[PlayData]): Unit =
+  def append(rawUsername: String, plays: List[PlayData]): Unit =
+    val username = CacheKeys.normalize(rawUsername)
     val now = clock()
     val ttl = now.plusSeconds(TtlDays * 24 * 3600).getEpochSecond
     val nextPage = nextPageNumber(username)
     putPage(username, nextPage, plays, now, ttl)
     plays.map(_.playId).maxOption.foreach(updateMaxPlayId(username, _))
 
-  def maxPlayId(username: String): Option[Int] =
+  def maxPlayId(rawUsername: String): Option[Int] =
+    val username = CacheKeys.normalize(rawUsername)
     val request = GetItemRequest
       .builder()
       .tableName(tableName)
       .key(
         Map(
-          "username" -> AttributeValue.fromS(username.toLowerCase),
+          "username" -> AttributeValue.fromS(username),
           "page" -> AttributeValue.fromN(MetaPage.toString)
         ).asJava
       )
@@ -124,7 +129,8 @@ class DynamoDbPlaysCache(client: DynamoDbClient, tableName: String, clock: () =>
       .map(_.n().toInt)
       .filter(_ > 0)
 
-  def touch(username: String): Unit =
+  def touch(rawUsername: String): Unit =
+    val username = CacheKeys.normalize(rawUsername)
     val now = clock()
     val ttl = now.plusSeconds(TtlDays * 24 * 3600).getEpochSecond
     val request = UpdateItemRequest
@@ -132,7 +138,7 @@ class DynamoDbPlaysCache(client: DynamoDbClient, tableName: String, clock: () =>
       .tableName(tableName)
       .key(
         Map(
-          "username" -> AttributeValue.fromS(username.toLowerCase),
+          "username" -> AttributeValue.fromS(username),
           "page" -> AttributeValue.fromN(MetaPage.toString)
         ).asJava
       )
@@ -148,16 +154,26 @@ class DynamoDbPlaysCache(client: DynamoDbClient, tableName: String, clock: () =>
     try client.updateItem(request): Unit
     catch case e: Exception => logger.warn(s"Error touching freshness for $username", e)
 
-  private def putPage(username: String, page: Int, plays: List[PlayData], now: Instant, ttl: Long, maxId: Int = 0): Unit =
+  // The public methods normalize the username before delegating here, so these private helpers
+  // receive an already-normalized key.
+  private def putPage(
+      username: String,
+      page: Int,
+      plays: List[PlayData],
+      now: Instant,
+      ttl: Long,
+      maxId: Int = 0
+  ): Unit =
     val baseItem = Map(
-      "username" -> AttributeValue.fromS(username.toLowerCase),
+      "username" -> AttributeValue.fromS(username),
       "page" -> AttributeValue.fromN(page.toString),
       "data" -> AttributeValue.fromS(plays.asJson.noSpaces),
       "cached_at" -> AttributeValue.fromN(now.getEpochSecond.toString),
       "ttl" -> AttributeValue.fromN(ttl.toString)
     )
-    val item = if maxId > 0 then baseItem + ("max_play_id" -> AttributeValue.fromN(maxId.toString))
-    else baseItem
+    val item =
+      if maxId > 0 then baseItem + ("max_play_id" -> AttributeValue.fromN(maxId.toString))
+      else baseItem
 
     val request = PutItemRequest.builder().tableName(tableName).item(item.asJava).build()
     try
@@ -173,7 +189,7 @@ class DynamoDbPlaysCache(client: DynamoDbClient, tableName: String, clock: () =>
       .tableName(tableName)
       .key(
         Map(
-          "username" -> AttributeValue.fromS(username.toLowerCase),
+          "username" -> AttributeValue.fromS(username),
           "page" -> AttributeValue.fromN(MetaPage.toString)
         ).asJava
       )
@@ -184,14 +200,14 @@ class DynamoDbPlaysCache(client: DynamoDbClient, tableName: String, clock: () =>
     try client.updateItem(request): Unit
     catch
       case _: ConditionalCheckFailedException => ()
-      case e: Exception => logger.warn(s"Error updating maxPlayId for $username", e)
+      case e: Exception                       => logger.warn(s"Error updating maxPlayId for $username", e)
 
   private def nextPageNumber(username: String): Int =
     val request = QueryRequest
       .builder()
       .tableName(tableName)
       .keyConditionExpression("username = :u")
-      .expressionAttributeValues(Map(":u" -> AttributeValue.fromS(username.toLowerCase)).asJava)
+      .expressionAttributeValues(Map(":u" -> AttributeValue.fromS(username)).asJava)
       .projectionExpression("#p")
       .expressionAttributeNames(Map("#p" -> "page").asJava)
       .scanIndexForward(false)
@@ -208,7 +224,7 @@ class DynamoDbPlaysCache(client: DynamoDbClient, tableName: String, clock: () =>
       .builder()
       .tableName(tableName)
       .keyConditionExpression("username = :u")
-      .expressionAttributeValues(Map(":u" -> AttributeValue.fromS(username.toLowerCase)).asJava)
+      .expressionAttributeValues(Map(":u" -> AttributeValue.fromS(username)).asJava)
       .projectionExpression("username, #p")
       .expressionAttributeNames(Map("#p" -> "page").asJava)
       .build()

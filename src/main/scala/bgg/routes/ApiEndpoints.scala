@@ -1,7 +1,7 @@
 package bgg.routes
 
 import bgg.bggapi.GameService
-import bgg.cache.GameCache
+import bgg.cache.{CacheKeys, GameCache}
 import bgg.config.AppConfig
 import bgg.domain.{CollectionResult, Fail, GameData, GameFilters, GameId, SourceType}
 import bgg.filter.GameFilter
@@ -207,7 +207,9 @@ class ApiEndpoints(
       SourceType.fromString(req.sourceType) match
         case Left(e)           => Left(Fail.IncorrectInput(e))
         case Right(sourceType) =>
-          val sourceId = req.sourceId.trim
+          // Normalize once at the entry point so the whole prefetch pipeline — Step Functions
+          // input, status keys, and the downstream data caches — carries the same identifier.
+          val sourceId = CacheKeys.normalize(req.sourceId)
           if sourceId.isEmpty then Left(Fail.IncorrectInput("source_id must not be empty"))
           else if !prefetchStore.isQueueable(sourceType, sourceId) then
             val status = prefetchStore.get(sourceType, sourceId).map(_.status.dbKey).getOrElse("pending")

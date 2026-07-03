@@ -17,7 +17,6 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import software.amazon.awssdk.services.dynamodb.model.*
 
 import java.time.Instant
-import scala.jdk.CollectionConverters.*
 
 class DynamoDbIntegrationSpec extends AnyWordSpec with Matchers with BeforeAndAfterAll:
 
@@ -182,3 +181,10 @@ class DynamoDbIntegrationSpec extends AnyWordSpec with Matchers with BeforeAndAf
 
       store.get(SourceType.Collection, "user1").get.status shouldBe PrefetchStatus.Completed
       store.get(SourceType.GeeKList, "user1").get.status shouldBe PrefetchStatus.Failed
+
+    "treat sourceId case-insensitively" in:
+      val store = DynamoDbPrefetchStatusStore(client, "prefetch-status")
+
+      store.set(SourceType.Collection, "MixedCase", PrefetchStatus.Completed)
+      // A differently-cased/whitespaced sourceId must resolve to the same normalized key.
+      store.get(SourceType.Collection, "  mixedcase ").map(_.status) shouldBe Some(PrefetchStatus.Completed)
