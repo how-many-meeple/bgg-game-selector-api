@@ -52,5 +52,7 @@ trait PrefetchStatusStore:
       case None         => true
       case Some(record) => record.status == PrefetchStatus.Failed
 
+  // sourceId is user-supplied (often a BGG username) and case-insensitive, so normalize it to
+  // trimmed lowercase — the same normalization the data caches use — so status and data keys agree.
   private[prefetch] def statusKey(sourceType: SourceType, sourceId: String): String =
-    s"${sourceType.toPathSegment}:$sourceId"
+    s"${sourceType.toPathSegment}:${bgg.cache.CacheKeys.normalize(sourceId)}"

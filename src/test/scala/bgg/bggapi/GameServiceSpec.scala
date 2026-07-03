@@ -265,6 +265,25 @@ class GameServiceSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach:
       result.games.map(_.id) shouldBe List(GameId(1))
       result.lastModifiedByGame shouldBe Map.empty
 
+    "treat usernames case-insensitively when reading cached ids" in:
+      val requestCache = MemoryRequestCache()
+      // Stored under normalized (lowercase) key, as the fetch path would write it.
+      requestCache.save("collection-ids:dave", List(1), 3600L, Instant.now())
+      val client = new BggClient:
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[CollectionItem]] =
+          fail("should not fetch — a differently-cased username must hit the same cache key")
+        def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(List(testGame(1, "Catan")))
+        def searchGames(query: String): Either[Fail, List[GameData]] = Right(Nil)
+        def fetchPlays(username: String, page: Int): Either[Fail, List[PlayData]] = Right(Nil)
+
+      val caches = TestCacheProvider(gameCache, vectorStore, requestCache = requestCache)
+      val service = GameService(client, caches, 50, () => Instant.now())
+
+      val result = service.resolveCollection("  DaVe ").toOption.get
+      result.games.map(_.id) shouldBe List(GameId(1))
+
   "resolveGameIds (vectorize paths)" should:
     "vectorize a mature game with enough ratings" in:
       val matureGame = testGame(1, "Old Classic").copy(yearPublished = Some(2010), usersRated = Some(1000))

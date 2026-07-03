@@ -1,7 +1,7 @@
 package bgg.lambda
 
 import bgg.bggapi.BggClient
-import bgg.cache.RequestCache
+import bgg.cache.{CacheKeys, RequestCache}
 import bgg.domain.{CollectionItem, Fail, GameId, SourceType}
 import com.typesafe.scalalogging.StrictLogging
 import io.circe.{Json, parser}
@@ -44,8 +44,8 @@ class CollectionFetchLogic(
 
   private def cacheIds(input: CollectionFetchInput, ids: List[GameId]): Unit =
     val cacheKey = SourceType.fromString(input.sourceType).toOption match
-      case Some(SourceType.Collection) => Some(s"collection-ids:${input.sourceId}")
-      case Some(SourceType.GeeKList)   => Some(s"geeklist-ids:${input.sourceId}")
+      case Some(SourceType.Collection) => Some(CacheKeys.collectionIds(input.sourceId))
+      case Some(SourceType.GeeKList)   => Some(CacheKeys.geeklistIds(input.sourceId))
       case _                           => None
 
     for
@@ -58,7 +58,7 @@ class CollectionFetchLogic(
   private def cacheCollectionDates(input: CollectionFetchInput, items: List[CollectionItem]): Unit =
     if SourceType.fromString(input.sourceType).contains(SourceType.Collection) then
       val dates = CollectionItem.datesByIdString(items)
-      requestCache.foreach(_.save(s"collection-dates:${input.sourceId}", dates, IdsCacheTtlSeconds, clock()))
+      requestCache.foreach(_.save(CacheKeys.collectionDates(input.sourceId), dates, IdsCacheTtlSeconds, clock()))
 
   private def parseInput(json: String): Either[Fail, CollectionFetchInput] =
     parser

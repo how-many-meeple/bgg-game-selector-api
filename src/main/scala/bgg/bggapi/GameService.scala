@@ -1,6 +1,6 @@
 package bgg.bggapi
 
-import bgg.cache.CacheProvider
+import bgg.cache.{CacheKeys, CacheProvider}
 import bgg.domain.{CollectionItem, CollectionResult, Fail, GameData, GameId, PlayData}
 import bgg.store.StoredVector
 import bgg.vector.VectorMath
@@ -34,8 +34,8 @@ class GameService(
   // Per-user collection metadata (lastModified date) is kept separate from the globally-shared
   // GameData cache so one user's dates never leak into another's collection or /hot.
   def resolveCollection(username: String): Either[Fail, CollectionResult] =
-    val idsKey = s"collection-ids:$username"
-    val datesKey = s"collection-dates:$username"
+    val idsKey = CacheKeys.collectionIds(username)
+    val datesKey = CacheKeys.collectionDates(username)
     requestCache.load[List[Int]](idsKey) match
       case Some(ids) =>
         logger.debug(s"Collection IDs for $username served from request cache (${ids.size} ids)")
@@ -56,7 +56,7 @@ class GameService(
       .flatMap((idString, date) => idString.toIntOption.map(id => GameId(id) -> date))
 
   def resolveGeeklist(listId: String): Either[Fail, List[GameData]] =
-    val cacheKey = s"geeklist-ids:$listId"
+    val cacheKey = CacheKeys.geeklistIds(listId)
     requestCache.load[List[Int]](cacheKey) match
       case Some(ids) =>
         logger.debug(s"Geeklist IDs for $listId served from request cache (${ids.size} ids)")
