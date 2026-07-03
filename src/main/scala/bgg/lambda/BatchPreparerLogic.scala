@@ -15,8 +15,10 @@ class BatchPreparerLogic(gameCache: GameCache) extends StrictLogging:
     val uncached = filterCached(gameIds)
     val chunks = uncached.grouped(ChunkSize).toList
 
-    logger.info(s"BatchPreparer: ${gameIds.size} total, ${gameIds.size - uncached.size} cached, " +
-      s"${uncached.size} to fetch in ${chunks.size} chunks")
+    logger.info(
+      s"BatchPreparer: ${gameIds.size} total, ${gameIds.size - uncached.size} cached, " +
+        s"${uncached.size} to fetch in ${chunks.size} chunks"
+    )
 
     val result = chunks.map { chunk =>
       Json.obj(
@@ -28,7 +30,9 @@ class BatchPreparerLogic(gameCache: GameCache) extends StrictLogging:
     Json.fromValues(result).noSpaces
 
   private def parseInput(json: String): (List[GameId], String, String) =
-    parser.parse(json).toOption
+    parser
+      .parse(json)
+      .toOption
       .flatMap { j =>
         for
           ids <- j.hcursor.downField("gameIds").as[List[Int]].toOption

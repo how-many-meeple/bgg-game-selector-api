@@ -3,7 +3,7 @@ package bgg.routes
 import bgg.bggapi.GameService
 import bgg.cache.GameCache
 import bgg.config.AppConfig
-import bgg.domain.{Fail, GameData, GameId, SourceType}
+import bgg.domain.{CollectionResult, Fail, GameData, GameFilters, GameId, SourceType}
 import bgg.filter.GameFilter
 import bgg.prefetch.{PrefetchStatus, PrefetchStatusStore}
 import bgg.recommendation.{RecommendationEngine, RecommendedGame}
@@ -67,7 +67,25 @@ class ApiEndpoints(
     }
 
   // GET /collection/:username
-  val collectionEndpoint = gameListEndpoint("collection", SourceType.Collection, gameService.resolveCollection)
+  // Does not share gameListEndpoint: the response is enriched with per-user lastModified dates.
+  val collectionEndpoint = baseEndpoint.get
+    .in("collection" / path[String]("id"))
+    .in(headers)
+    .out(jsonBody[List[Json]])
+    .handle { (id, hdrs) =>
+      checkPrefetchBlock(SourceType.Collection, id)
+        .getOrElse {
+          val filters = HeaderFilters.fromHeaders(hdrs)
+          gameService.resolveCollection(id).map(result => collectionJson(result, filters))
+        }
+    }
+
+  private def collectionJson(result: CollectionResult, filters: GameFilters): List[Json] =
+    val enriched = GameFilter(result.games, filters).map { game =>
+      val lastModified = result.lastModifiedByGame.get(game.id).fold(Json.Null)(Json.fromString)
+      game.toJson.deepMerge(Json.obj("lastmodified" -> lastModified))
+    }
+    FieldReduction.filterFields(enriched, filters.fieldWhitelist)
 
   // GET /geeklist/:id
   val geeklistEndpoint = gameListEndpoint("geeklist", SourceType.GeeKList, gameService.resolveGeeklist)
@@ -156,8 +174,7 @@ class ApiEndpoints(
             "plays" -> Json.fromValues(groupedPlays),
             "meta" -> playsMetadata(username)
           )
-        else
-          Json.fromValues(groupedPlays)
+        else Json.fromValues(groupedPlays)
       }
     }
 
@@ -188,7 +205,7 @@ class ApiEndpoints(
     .out(statusCode and jsonBody[PrefetchResponse])
     .handle { req =>
       SourceType.fromString(req.sourceType) match
-        case Left(e) => Left(Fail.IncorrectInput(e))
+        case Left(e)           => Left(Fail.IncorrectInput(e))
         case Right(sourceType) =>
           val sourceId = req.sourceId.trim
           if sourceId.isEmpty then Left(Fail.IncorrectInput("source_id must not be empty"))

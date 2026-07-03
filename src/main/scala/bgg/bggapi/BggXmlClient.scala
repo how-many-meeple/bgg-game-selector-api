@@ -1,7 +1,7 @@
 package bgg.bggapi
 
 import bgg.config.BggConfig
-import bgg.domain.{Fail, GameData, GameId, PlayData}
+import bgg.domain.{CollectionItem, Fail, GameData, GameId, PlayData}
 import com.typesafe.scalalogging.StrictLogging
 import sttp.client4.*
 import sttp.model.StatusCode
@@ -71,7 +71,7 @@ class BggXmlClient(config: BggConfig, backend: SyncBackend) extends BggClient wi
         }
       }
 
-  def fetchCollection(username: String, retries: Int = config.retries): Either[Fail, List[GameId]] =
+  def fetchCollection(username: String, retries: Int = config.retries): Either[Fail, List[CollectionItem]] =
     getWithRetry(
       s"$ApiV2Base/collection",
       Map("username" -> username, "own" -> "1", "excludesubtype" -> "boardgameexpansion"),
@@ -80,8 +80,21 @@ class BggXmlClient(config: BggConfig, backend: SyncBackend) extends BggClient wi
       .flatMap { xml =>
         val items = (xml \ "item")
         if items.isEmpty then Left(Fail.BggUserNotFound(username))
-        else Right(items.toList.flatMap(n => (n \ "@objectid").headOption.map(id => GameId(id.text.toInt))))
+        else
+          Right(items.toList.flatMap { n =>
+            (n \ "@objectid").headOption.map { id =>
+              CollectionItem(GameId(id.text.toInt), collectionLastModified(n))
+            }
+          })
       }
+
+  // BGG exposes no "dateadded"; status/@lastmodified is the closest per-item date, and for an
+  // owned item reflects when it entered the collection. take(10) keeps the date, dropping BGG's time.
+  private def collectionLastModified(item: scala.xml.Node): Option[String] =
+    (item \ "status" \ "@lastmodified").headOption
+      .map(_.text.trim)
+      .filter(_.nonEmpty)
+      .map(_.take(10))
 
   def fetchGeeklist(listId: String): Either[Fail, List[GameId]] =
     getWithRetry(s"$ApiV1Base/geeklist/$listId")

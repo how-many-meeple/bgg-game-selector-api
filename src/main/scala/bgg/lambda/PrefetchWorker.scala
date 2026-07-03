@@ -86,7 +86,7 @@ class PrefetchWorkerLogic(
               gameService.resolveCollection(msg.sourceId),
               gameService.fetchAndCachePlays(msg.sourceId)
             )
-            collectionResult
+            collectionResult.map(_.games)
           case SourceType.GeeKList => gameService.resolveGeeklist(msg.sourceId)
           case SourceType.Hot      => gameService.resolveHotGames()
           case SourceType.Plays    => Right(Nil)

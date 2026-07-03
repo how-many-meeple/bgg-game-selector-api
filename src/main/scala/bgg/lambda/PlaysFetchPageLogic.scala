@@ -7,8 +7,22 @@ import bgg.prefetch.{PrefetchStatus, PrefetchStatusStore}
 import com.typesafe.scalalogging.StrictLogging
 import io.circe.{Json, parser}
 
-case class PlaysFetchPageInput(username: String, page: Int, sourceType: String, sourceId: String, cachedMaxPlayId: Option[Int])
-case class PlaysFetchPageOutput(nextPage: Int, done: Boolean, totalSoFar: Int, username: String, sourceType: String, sourceId: String, cachedMaxPlayId: Option[Int])
+case class PlaysFetchPageInput(
+    username: String,
+    page: Int,
+    sourceType: String,
+    sourceId: String,
+    cachedMaxPlayId: Option[Int]
+)
+case class PlaysFetchPageOutput(
+    nextPage: Int,
+    done: Boolean,
+    totalSoFar: Int,
+    username: String,
+    sourceType: String,
+    sourceId: String,
+    cachedMaxPlayId: Option[Int]
+)
 
 class PlaysFetchPageLogic(
     bggClient: BggClient,
@@ -23,7 +37,9 @@ class PlaysFetchPageLogic(
     toJson(result)
 
   private def parseInput(json: String): PlaysFetchPageInput =
-    parser.parse(json).toOption
+    parser
+      .parse(json)
+      .toOption
       .flatMap { j =>
         for
           username <- j.hcursor.downField("username").as[String].toOption
@@ -55,8 +71,7 @@ class PlaysFetchPageLogic(
       val maxId = playsCache.maxPlayId(input.username)
       prefetchStore.set(SourceType.Plays, input.username, PrefetchStatus.Processing)
       maxId
-    else
-      input.cachedMaxPlayId
+    else input.cachedMaxPlayId
 
     bggClient.fetchPlays(input.username, input.page) match
       case Right(plays) if plays.nonEmpty =>
@@ -67,8 +82,7 @@ class PlaysFetchPageLogic(
           case None =>
             (plays, false)
 
-        if newPlays.nonEmpty then
-          playsCache.append(input.username, newPlays)
+        if newPlays.nonEmpty then playsCache.append(input.username, newPlays)
 
         if hitCached then
           markPlaysComplete(input.username)
@@ -139,12 +153,14 @@ class PlaysFetchPageLogic(
     playsCache.load(username).map(_.size).getOrElse(0)
 
   private def toJson(output: PlaysFetchPageOutput): String =
-    Json.obj(
-      "nextPage" -> Json.fromInt(output.nextPage),
-      "done" -> Json.fromBoolean(output.done),
-      "totalSoFar" -> Json.fromInt(output.totalSoFar),
-      "username" -> Json.fromString(output.username),
-      "sourceType" -> Json.fromString(output.sourceType),
-      "sourceId" -> Json.fromString(output.sourceId),
-      "cachedMaxPlayId" -> output.cachedMaxPlayId.fold(Json.fromInt(0))(Json.fromInt)
-    ).noSpaces
+    Json
+      .obj(
+        "nextPage" -> Json.fromInt(output.nextPage),
+        "done" -> Json.fromBoolean(output.done),
+        "totalSoFar" -> Json.fromInt(output.totalSoFar),
+        "username" -> Json.fromString(output.username),
+        "sourceType" -> Json.fromString(output.sourceType),
+        "sourceId" -> Json.fromString(output.sourceId),
+        "cachedMaxPlayId" -> output.cachedMaxPlayId.fold(Json.fromInt(0))(Json.fromInt)
+      )
+      .noSpaces

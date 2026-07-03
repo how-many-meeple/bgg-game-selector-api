@@ -2,7 +2,7 @@ package bgg.lambda
 
 import bgg.TestFixtures.testGame
 import bgg.bggapi.BggClient
-import bgg.cache.{GameCache, MemoryGameCache, TestCacheProvider}
+import bgg.cache.{MemoryGameCache, TestCacheProvider}
 import bgg.domain.*
 import bgg.store.SqliteVectorStore
 import io.circe.parser.parse
@@ -37,10 +37,11 @@ class GameFetchLogicSpec extends AnyWordSpec with Matchers with BeforeAndAfterEa
     "fetch games and return succeeded IDs" in:
       val games = List(testGame(1, "Catan"), testGame(2, "Pandemic"))
       val client = new BggClient:
-        def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[CollectionItem]] = Right(Nil)
         def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
         def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
-        def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(games.filter(g => ids.contains(g.id)))
+        def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] =
+          Right(games.filter(g => ids.contains(g.id)))
         def searchGames(query: String): Either[Fail, List[GameData]] = Right(Nil)
         def fetchPlays(username: String, page: Int): Either[Fail, List[PlayData]] = Right(Nil)
 
@@ -57,7 +58,7 @@ class GameFetchLogicSpec extends AnyWordSpec with Matchers with BeforeAndAfterEa
       gameCache.save(game1, Instant.now())
 
       val client = new BggClient:
-        def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[CollectionItem]] = Right(Nil)
         def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
         def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] =
@@ -75,7 +76,7 @@ class GameFetchLogicSpec extends AnyWordSpec with Matchers with BeforeAndAfterEa
 
     "report failed sub-batches" in:
       val client = new BggClient:
-        def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[CollectionItem]] = Right(Nil)
         def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
         def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] =
@@ -92,7 +93,7 @@ class GameFetchLogicSpec extends AnyWordSpec with Matchers with BeforeAndAfterEa
 
     "throw BggRateLimitedException on rate limit" in:
       val client = new BggClient:
-        def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[CollectionItem]] = Right(Nil)
         def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
         def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] =
@@ -110,7 +111,7 @@ class GameFetchLogicSpec extends AnyWordSpec with Matchers with BeforeAndAfterEa
       gameCache.save(testGame(2, "Pandemic"), Instant.now())
 
       val client = new BggClient:
-        def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[CollectionItem]] = Right(Nil)
         def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
         def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
         def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] =

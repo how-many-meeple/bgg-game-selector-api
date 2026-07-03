@@ -26,12 +26,14 @@ object TestFixtures:
 
   def stubClient(
       collectionResult: Either[Fail, List[GameId]] = Right(Nil),
+      collectionItems: Option[Either[Fail, List[CollectionItem]]] = None,
       geeklistResult: Either[Fail, List[GameId]] = Right(Nil),
       hotResult: Either[Fail, List[GameId]] = Right(Nil),
       gamesResult: Either[Fail, List[GameData]] = Right(Nil),
       playsResult: Either[Fail, List[PlayData]] = Right(Nil)
   ): BggClient = new BggClient:
-    def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] = collectionResult
+    def fetchCollection(username: String, retries: Int): Either[Fail, List[CollectionItem]] =
+      collectionItems.getOrElse(collectionResult.map(_.map(id => CollectionItem(id, None))))
     def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = geeklistResult
     def fetchHotGames(): Either[Fail, List[GameId]] = hotResult
     def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = gamesResult

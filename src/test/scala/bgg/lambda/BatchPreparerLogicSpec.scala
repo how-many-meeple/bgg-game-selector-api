@@ -2,7 +2,6 @@ package bgg.lambda
 
 import bgg.TestFixtures.testGame
 import bgg.cache.MemoryGameCache
-import bgg.domain.GameId
 import io.circe.parser.parse
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
@@ -17,7 +16,7 @@ class BatchPreparerLogicSpec extends AnyWordSpec with Matchers:
       val gameCache = MemoryGameCache()
       val logic = BatchPreparerLogic(gameCache)
       val ids = (1 to 650).toList
-      val input = s"""{"gameIds":${ids.mkString("[",",","]")},"sourceType":"collection","sourceId":"test"}"""
+      val input = s"""{"gameIds":${ids.mkString("[", ",", "]")},"sourceType":"collection","sourceId":"test"}"""
 
       val result = parse(logic.handle(input)).toOption.get
       val batches = result.asArray.get
