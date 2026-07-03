@@ -1,7 +1,7 @@
 package bgg.bggapi
 
 import bgg.cache.CacheProvider
-import bgg.domain.{Fail, GameData, GameId, PlayData}
+import bgg.domain.{CollectionItem, CollectionResult, Fail, GameData, GameId, PlayData}
 import bgg.store.StoredVector
 import bgg.vector.VectorMath
 import com.typesafe.scalalogging.StrictLogging
@@ -31,17 +31,29 @@ class GameService(
 
   private val CollectionIdsTtlSeconds = 24L * 3600
 
-  def resolveCollection(username: String): Either[Fail, List[GameData]] =
-    val cacheKey = s"collection-ids:$username"
-    requestCache.load[List[Int]](cacheKey) match
+  // Per-user collection metadata (lastModified date) is kept separate from the globally-shared
+  // GameData cache so one user's dates never leak into another's collection or /hot.
+  def resolveCollection(username: String): Either[Fail, CollectionResult] =
+    val idsKey = s"collection-ids:$username"
+    val datesKey = s"collection-dates:$username"
+    requestCache.load[List[Int]](idsKey) match
       case Some(ids) =>
         logger.debug(s"Collection IDs for $username served from request cache (${ids.size} ids)")
-        resolveGameIds(ids.map(GameId(_)))
+        val lastModified = loadCachedDates(datesKey)
+        resolveGameIds(ids.map(GameId(_))).map(games => CollectionResult(games, lastModified))
       case None =>
-        bggClient.fetchCollection(username).flatMap { ids =>
-          requestCache.save(cacheKey, ids.map(_.value), CollectionIdsTtlSeconds, clock())
-          resolveGameIds(ids)
+        bggClient.fetchCollection(username).flatMap { items =>
+          requestCache.save(idsKey, items.map(_.id.value), CollectionIdsTtlSeconds, clock())
+          requestCache.save(datesKey, CollectionItem.datesByIdString(items), CollectionIdsTtlSeconds, clock())
+          val lastModified = CollectionItem.datesByGameId(items)
+          resolveGameIds(items.map(_.id)).map(games => CollectionResult(games, lastModified))
         }
+
+  private def loadCachedDates(key: String): Map[GameId, String] =
+    requestCache
+      .load[Map[String, String]](key)
+      .getOrElse(Map.empty)
+      .flatMap((idString, date) => idString.toIntOption.map(id => GameId(id) -> date))
 
   def resolveGeeklist(listId: String): Either[Fail, List[GameData]] =
     val cacheKey = s"geeklist-ids:$listId"

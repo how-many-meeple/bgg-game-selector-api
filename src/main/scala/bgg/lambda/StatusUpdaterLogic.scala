@@ -14,7 +14,9 @@ class StatusUpdaterLogic(prefetchStore: PrefetchStatusStore) extends StrictLoggi
     """{"ok":true}"""
 
   private def parseInput(json: String): (SourceType, String, PrefetchStatus, String) =
-    parser.parse(json).toOption
+    parser
+      .parse(json)
+      .toOption
       .flatMap { j =>
         for
           st <- j.hcursor.downField("sourceType").as[String].toOption
@@ -22,9 +24,11 @@ class StatusUpdaterLogic(prefetchStore: PrefetchStatusStore) extends StrictLoggi
           status <- j.hcursor.downField("status").as[String].toOption
         yield
           val reason = j.hcursor.downField("reason").as[String].getOrElse("")
-          val sourceType = SourceType.fromString(st).getOrElse(
-            throw RuntimeException(s"Invalid sourceType: $st")
-          )
+          val sourceType = SourceType
+            .fromString(st)
+            .getOrElse(
+              throw RuntimeException(s"Invalid sourceType: $st")
+            )
           val prefetchStatus = PrefetchStatus.fromDbKey(status)
           (sourceType, si, prefetchStatus, reason)
       }

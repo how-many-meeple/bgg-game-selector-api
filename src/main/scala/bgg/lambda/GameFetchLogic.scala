@@ -31,7 +31,9 @@ class GameFetchLogic(
     toJson(output)
 
   private def parseInput(json: String): List[GameId] =
-    parser.parse(json).toOption
+    parser
+      .parse(json)
+      .toOption
       .flatMap(_.hcursor.downField("gameIds").as[List[Int]].toOption)
       .map(_.map(GameId(_)))
       .getOrElse(throw RuntimeException("Invalid input JSON for GameFetch"))
@@ -40,8 +42,7 @@ class GameFetchLogic(
     val (alreadyCached, missing) = partitionCached(ids)
     logger.info(s"GameFetch: ${ids.size} total, ${alreadyCached.size} already cached, ${missing.size} to fetch")
 
-    if missing.isEmpty then
-      return GameFetchOutput(ids.map(_.value), Nil, alreadyCached.size)
+    if missing.isEmpty then return GameFetchOutput(ids.map(_.value), Nil, alreadyCached.size)
 
     val subBatches = missing.grouped(SubBatchSize).toList
     val results = processSubBatchesParallel(subBatches)
@@ -98,8 +99,10 @@ class GameFetchLogic(
       )
 
   private def toJson(output: GameFetchOutput): String =
-    Json.obj(
-      "succeeded" -> output.succeeded.asJson,
-      "failed" -> output.failed.asJson,
-      "totalCached" -> Json.fromInt(output.totalCached)
-    ).noSpaces
+    Json
+      .obj(
+        "succeeded" -> output.succeeded.asJson,
+        "failed" -> output.failed.asJson,
+        "totalCached" -> Json.fromInt(output.totalCached)
+      )
+      .noSpaces

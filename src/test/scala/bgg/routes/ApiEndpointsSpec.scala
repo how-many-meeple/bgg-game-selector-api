@@ -85,6 +85,59 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
       val json = parseJson(response.body).getOrElse(Json.Null)
       json.asArray.map(_.size) shouldBe Some(2)
 
+    "include lastmodified date per game by default" in:
+      val client = stubClient(
+        collectionItems =
+          Some(Right(List(CollectionItem(GameId(1), Some("2022-03-15")), CollectionItem(GameId(2), None)))),
+        gamesResult = Right(List(testGame(1, "Catan"), testGame(2, "Pandemic")))
+      )
+      val endpoints = makeEndpoints(client)
+      val backend = makeBackend(endpoints)
+      val response = basicRequest
+        .get(uri"http://test/collection/testuser")
+        .response(asStringAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.Ok
+      val games = parseJson(response.body).getOrElse(Json.Null).asArray.get
+      val byId = games.map(g => g.hcursor.get[Int]("id").toOption.get -> g).toMap
+      byId(1).hcursor.get[String]("lastmodified").toOption shouldBe Some("2022-03-15")
+      byId(2).hcursor.get[Json]("lastmodified").toOption shouldBe Some(Json.Null)
+
+    "omit lastmodified when a field whitelist excludes it" in:
+      val client = stubClient(
+        collectionItems = Some(Right(List(CollectionItem(GameId(1), Some("2022-03-15"))))),
+        gamesResult = Right(List(testGame(1, "Catan")))
+      )
+      val endpoints = makeEndpoints(client)
+      val backend = makeBackend(endpoints)
+      val response = basicRequest
+        .get(uri"http://test/collection/testuser")
+        .header("Bgg-Field-Whitelist", "id,name")
+        .response(asStringAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.Ok
+      val json = parseJson(response.body).getOrElse(Json.Null).asArray.get.head
+      json.hcursor.keys.map(_.toList) shouldBe Some(List("id", "name"))
+
+    "include lastmodified when the whitelist requests it" in:
+      val client = stubClient(
+        collectionItems = Some(Right(List(CollectionItem(GameId(1), Some("2022-03-15"))))),
+        gamesResult = Right(List(testGame(1, "Catan")))
+      )
+      val endpoints = makeEndpoints(client)
+      val backend = makeBackend(endpoints)
+      val response = basicRequest
+        .get(uri"http://test/collection/testuser")
+        .header("Bgg-Field-Whitelist", "id,lastmodified")
+        .response(asStringAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.Ok
+      val json = parseJson(response.body).getOrElse(Json.Null).asArray.get.head
+      json.hcursor.get[String]("lastmodified").toOption shouldBe Some("2022-03-15")
+
     "return 404 when user not found" in:
       val client = stubClient(collectionResult = Left(Fail.BggUserNotFound("ghost")))
       val endpoints = makeEndpoints(client)

@@ -1,10 +1,9 @@
 package bgg.lambda
 
 import bgg.TestFixtures.stubClient
-import bgg.bggapi.BggClient
-import bgg.cache.{NoOpPlaysCache, PlaysCache}
+import bgg.cache.PlaysCache
 import bgg.domain.*
-import bgg.prefetch.{PrefetchStatus, PrefetchStatusStore, SqlitePrefetchStatusStore}
+import bgg.prefetch.{PrefetchStatus, SqlitePrefetchStatusStore}
 import io.circe.parser.parse
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.matchers.should.Matchers
@@ -173,7 +172,7 @@ class PlaysFetchPageLogicSpec extends AnyWordSpec with Matchers with BeforeAndAf
       val result = parse(logic.handle(input)).toOption.get
 
       result.hcursor.downField("done").as[Boolean].toOption.get shouldBe false
-      playsCache.store("judy") should contain allOf(play1, play2)
+      playsCache.store("judy") should contain allOf (play1, play2)
 
     "does not append empty list when all plays on page are already cached" in:
       val existingPlay = PlayData(100, GameId(100), "Catan", "2024-01-01", 1, 60, Nil)

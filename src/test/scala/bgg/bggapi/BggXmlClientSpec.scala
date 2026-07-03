@@ -5,7 +5,7 @@ import bgg.domain.*
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import sttp.client4.testing.{ResponseStub, SyncBackendStub}
-import sttp.model.{Header, StatusCode}
+import sttp.model.StatusCode
 
 class BggXmlClientSpec extends AnyWordSpec with Matchers:
 
@@ -29,9 +29,11 @@ class BggXmlClientSpec extends AnyWordSpec with Matchers:
     """<items totalitems="3">
       |  <item objecttype="thing" objectid="174430" subtype="boardgame">
       |    <name sortindex="1">Gloomhaven</name>
+      |    <status own="1" lastmodified="2022-03-15 08:21:49" />
       |  </item>
       |  <item objecttype="thing" objectid="167791" subtype="boardgame">
       |    <name sortindex="1">Terraforming Mars</name>
+      |    <status own="1" lastmodified="2020-01-02 05:45:43" />
       |  </item>
       |  <item objecttype="thing" objectid="169786" subtype="boardgame">
       |    <name sortindex="1">Scythe</name>
@@ -82,16 +84,6 @@ class BggXmlClientSpec extends AnyWordSpec with Matchers:
       |  </item>
       |</items>""".stripMargin
 
-  private val searchXml =
-    """<items total="2">
-      |  <item type="boardgame" id="174430">
-      |    <name type="primary" value="Gloomhaven"/>
-      |  </item>
-      |  <item type="boardgame" id="291457">
-      |    <name type="primary" value="Gloomhaven: Jaws of the Lion"/>
-      |  </item>
-      |</items>""".stripMargin
-
   "fetchCollection" should:
     "parse game IDs from collection XML" in:
       val backend = stubBackend(body = collectionXml)
@@ -99,7 +91,38 @@ class BggXmlClientSpec extends AnyWordSpec with Matchers:
 
       val result = client.fetchCollection("testuser")
 
-      result shouldBe Right(List(GameId(174430), GameId(167791), GameId(169786)))
+      result.map(_.map(_.id)) shouldBe Right(List(GameId(174430), GameId(167791), GameId(169786)))
+
+    "parse status/@lastmodified as a YYYY-MM-DD date, dropping the time" in:
+      val backend = stubBackend(body = collectionXml)
+      val client = BggXmlClient(defaultConfig, backend)
+
+      val result = client.fetchCollection("testuser").toOption.get
+
+      result.find(_.id == GameId(174430)).flatMap(_.lastModified) shouldBe Some("2022-03-15")
+      result.find(_.id == GameId(167791)).flatMap(_.lastModified) shouldBe Some("2020-01-02")
+
+    "return None for lastModified when the item has no status element" in:
+      val backend = stubBackend(body = collectionXml)
+      val client = BggXmlClient(defaultConfig, backend)
+
+      val result = client.fetchCollection("testuser").toOption.get
+
+      result.find(_.id == GameId(169786)).flatMap(_.lastModified) shouldBe None
+
+    "return None for lastModified when status carries a blank date" in:
+      val blankDateXml =
+        """<items totalitems="1">
+          |  <item objecttype="thing" objectid="1" subtype="boardgame">
+          |    <name sortindex="1">Blank</name>
+          |    <status own="1" lastmodified="" />
+          |  </item>
+          |</items>""".stripMargin
+      val client = BggXmlClient(defaultConfig, stubBackend(body = blankDateXml))
+
+      val result = client.fetchCollection("testuser").toOption.get
+
+      result.head.lastModified shouldBe None
 
     "use correct URL with query params" in:
       var capturedUrl = ""

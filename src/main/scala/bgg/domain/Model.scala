@@ -22,6 +22,21 @@ object Username:
   def apply(value: String): Username = value
   extension (u: Username) def value: String = u
 
+// lastModified lives here rather than on GameData because GameData is cached globally per
+// game, whereas the collection date is per-user.
+case class CollectionItem(id: GameId, lastModified: Option[String])
+
+object CollectionItem:
+  // Dates keyed by GameId for in-memory use; items without a date are omitted.
+  def datesByGameId(items: List[CollectionItem]): Map[GameId, String] =
+    items.flatMap(item => item.lastModified.map(item.id -> _)).toMap
+
+  // GameId is opaque over Int, so the cache persists dates with String keys instead.
+  def datesByIdString(items: List[CollectionItem]): Map[String, String] =
+    items.flatMap(item => item.lastModified.map(item.id.asString -> _)).toMap
+
+case class CollectionResult(games: List[GameData], lastModifiedByGame: Map[GameId, String])
+
 enum SourceType:
   case Collection, GeeKList, Hot, Plays
   def toPathSegment: String = this match

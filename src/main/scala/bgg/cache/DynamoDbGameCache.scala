@@ -61,9 +61,13 @@ class DynamoDbGameCache(client: DynamoDbClient, tableName: String) extends GameC
     if ids.isEmpty then return Nil
     val chunks = ids.distinct.grouped(BatchGetMaxKeys).toList
     if chunks.size <= 1 then
-      chunks.flatMap(chunk => fetchBatchWithRetry(
-        chunk.map(id => Map("id" -> AttributeValue.fromS(id.asString)).asJava), Nil, BatchGetMaxRetries
-      ))
+      chunks.flatMap(chunk =>
+        fetchBatchWithRetry(
+          chunk.map(id => Map("id" -> AttributeValue.fromS(id.asString)).asJava),
+          Nil,
+          BatchGetMaxRetries
+        )
+      )
     else
       supervised:
         val forks = chunks.map { chunk =>

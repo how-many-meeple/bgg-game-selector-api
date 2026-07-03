@@ -99,7 +99,7 @@ class PrefetchWorkerLogicSpec extends AnyWordSpec with Matchers with BeforeAndAf
     "set status to Processing before completion" in:
       var statusDuringFetch: Option[PrefetchStatus] = None
       val client = new BggClient:
-        def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] =
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[CollectionItem]] =
           statusDuringFetch = prefetchStore.get(SourceType.Collection, username).map(_.status)
           Right(Nil)
         def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
@@ -122,7 +122,7 @@ class PrefetchWorkerLogicSpec extends AnyWordSpec with Matchers with BeforeAndAf
     "set status to Completed on successful hot games prefetch" in:
       val games = List(testGame(1, "Catan"))
       val hotClient = new BggClient:
-        def fetchCollection(username: String, retries: Int): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[CollectionItem]] = Right(Nil)
         def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
         def fetchHotGames(): Either[Fail, List[GameId]] = Right(List(GameId(1)))
         def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(games)

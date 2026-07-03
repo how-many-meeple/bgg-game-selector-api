@@ -74,8 +74,7 @@ object NativeBootstrap:
         val withCors = response.copy(headers = response.headers ++ corsHeaders)
         val isJsonResponse = withCors.headers.get("Content-Type").exists(_.contains("application/json"))
         val compressed =
-          if acceptsGzip && isJsonResponse && withCors.body.length > 1024 then
-            gzipResponse(withCors)
+          if acceptsGzip && isJsonResponse && withCors.body.length > 1024 then gzipResponse(withCors)
           else withCors
         compressed.asJson.noSpaces
 
@@ -87,7 +86,8 @@ object NativeBootstrap:
     val config = AppConfig.load()
     val httpBackend = DefaultSyncBackend()
     val bggClient = BggXmlClient(config.bgg, httpBackend)
-    val dynamo = DynamoDbClient.builder()
+    val dynamo = DynamoDbClient
+      .builder()
       .region(Region.of(config.aws.region))
       .httpClient(UrlConnectionHttpClient.create())
       .build()
@@ -99,7 +99,8 @@ object NativeBootstrap:
     val config = AppConfig.load()
     val httpBackend = DefaultSyncBackend()
     val bggClient = BggXmlClient(config.bgg, httpBackend)
-    val dynamo = DynamoDbClient.builder()
+    val dynamo = DynamoDbClient
+      .builder()
       .region(Region.of(config.aws.region))
       .httpClient(UrlConnectionHttpClient.create())
       .build()
@@ -112,7 +113,8 @@ object NativeBootstrap:
     val config = AppConfig.load()
     val httpBackend = DefaultSyncBackend()
     val bggClient = BggXmlClient(config.bgg, httpBackend)
-    val dynamo = DynamoDbClient.builder()
+    val dynamo = DynamoDbClient
+      .builder()
       .region(Region.of(config.aws.region))
       .httpClient(UrlConnectionHttpClient.create())
       .build()
@@ -122,7 +124,8 @@ object NativeBootstrap:
 
   private def buildBatchPreparerRoute(): String => String =
     val config = AppConfig.load()
-    val dynamo = DynamoDbClient.builder()
+    val dynamo = DynamoDbClient
+      .builder()
       .region(Region.of(config.aws.region))
       .httpClient(UrlConnectionHttpClient.create())
       .build()
@@ -132,7 +135,8 @@ object NativeBootstrap:
 
   private def buildStatusUpdaterRoute(): String => String =
     val config = AppConfig.load()
-    val dynamo = DynamoDbClient.builder()
+    val dynamo = DynamoDbClient
+      .builder()
       .region(Region.of(config.aws.region))
       .httpClient(UrlConnectionHttpClient.create())
       .build()

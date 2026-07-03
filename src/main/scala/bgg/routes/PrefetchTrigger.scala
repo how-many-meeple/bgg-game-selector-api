@@ -13,14 +13,17 @@ trait PrefetchTrigger:
 
 class StepFunctionsTrigger(sfnClient: SfnClient, stateMachineArn: String) extends PrefetchTrigger with StrictLogging:
   def trigger(sourceType: SourceType, sourceId: String): Unit =
-    val input = Json.obj(
-      "sourceType" -> Json.fromString(sourceType.toPathSegment),
-      "sourceId" -> Json.fromString(sourceId)
-    ).noSpaces
+    val input = Json
+      .obj(
+        "sourceType" -> Json.fromString(sourceType.toPathSegment),
+        "sourceId" -> Json.fromString(sourceId)
+      )
+      .noSpaces
     val sanitizedId = sourceId.replaceAll("[^a-zA-Z0-9_-]", "_")
     val name = s"${sourceType.toPathSegment}-${sanitizedId}-${Instant.now().toEpochMilli}"
     sfnClient.startExecution(
-      StartExecutionRequest.builder()
+      StartExecutionRequest
+        .builder()
         .stateMachineArn(stateMachineArn)
         .name(name)
         .input(input)

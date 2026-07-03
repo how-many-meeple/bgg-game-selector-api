@@ -1,13 +1,23 @@
 package bgg.lambda
 
-import bgg.TestFixtures.{stubClient, testGame}
-import bgg.bggapi.BggClient
+import bgg.TestFixtures.stubClient
+import bgg.cache.RequestCache
 import bgg.domain.*
 import io.circe.parser.parse
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 
+import java.time.Instant
+import scala.collection.mutable
+
 class CollectionFetchLogicSpec extends AnyWordSpec with Matchers:
+
+  private class MemoryRequestCache extends RequestCache:
+    val store: mutable.Map[String, String] = mutable.Map.empty
+    def load[T: io.circe.Decoder](key: String): Option[T] =
+      store.get(key).flatMap(json => io.circe.parser.decode[T](json).toOption)
+    def save[T: io.circe.Encoder](key: String, value: T, ttlSeconds: Long, now: Instant): Unit =
+      store(key) = io.circe.syntax.EncoderOps(value).asJson.noSpaces
 
   "CollectionFetchLogic" should:
 
@@ -21,6 +31,27 @@ class CollectionFetchLogicSpec extends AnyWordSpec with Matchers:
       ids shouldBe List(1, 2, 3)
       result.hcursor.downField("sourceType").as[String].toOption.get shouldBe "collection"
       result.hcursor.downField("sourceId").as[String].toOption.get shouldBe "testuser"
+
+    "cache collection ids and per-user lastmodified dates" in:
+      val client = stubClient(
+        collectionItems = Some(
+          Right(List(CollectionItem(GameId(1), Some("2022-03-15")), CollectionItem(GameId(2), None)))
+        )
+      )
+      val cache = MemoryRequestCache()
+      val logic = CollectionFetchLogic(client, retries = 6, requestCache = Some(cache))
+      val input = """{"sourceType":"collection","sourceId":"testuser"}"""
+
+      logic.handle(input): Unit
+
+      parse(cache.store("collection-ids:testuser")).toOption.get
+        .as[List[Int]]
+        .toOption
+        .get shouldBe List(1, 2)
+      parse(cache.store("collection-dates:testuser")).toOption.get
+        .as[Map[String, String]]
+        .toOption
+        .get shouldBe Map("1" -> "2022-03-15")
 
     "return game IDs for a geeklist" in:
       val client = stubClient(geeklistResult = Right(List(GameId(10), GameId(20))))
