@@ -32,3 +32,6 @@ poc/
 # OS
 .DS_Store
 Thumbs.db
+
+# SAM build artifacts
+.aws-sam/
