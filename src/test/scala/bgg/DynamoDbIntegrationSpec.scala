@@ -5,9 +5,10 @@ import bgg.domain.*
 import bgg.prefetch.{DynamoDbPrefetchStatusStore, PrefetchStatus}
 import bgg.store.{DynamoDbVectorStore, StoredVector}
 import bgg.vector.GameVector
-import org.scalatest.BeforeAndAfterAll
+import org.scalatest.{BeforeAndAfterAll, Canceled, Outcome}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
+import org.testcontainers.DockerClientFactory
 import org.testcontainers.containers.localstack.LocalStackContainer
 import org.testcontainers.containers.localstack.LocalStackContainer.Service
 import org.testcontainers.utility.DockerImageName
@@ -25,7 +26,19 @@ class DynamoDbIntegrationSpec extends AnyWordSpec with Matchers with BeforeAndAf
 
   private var client: DynamoDbClient = _
 
+  // These tests need a real DynamoDB via LocalStack, which requires Docker. When Docker is
+  // unavailable (e.g. CI without a daemon), cancel each test rather than aborting the suite —
+  // a missing environment is not a test failure.
+  private lazy val dockerAvailable: Boolean =
+    try DockerClientFactory.instance().isDockerAvailable
+    catch case _: Throwable => false
+
+  override def withFixture(test: NoArgTest): Outcome =
+    if !dockerAvailable then Canceled("Docker not available — skipping DynamoDB integration tests")
+    else super.withFixture(test)
+
   override def beforeAll(): Unit =
+    if !dockerAvailable then return
     localstack.start()
     client = DynamoDbClient
       .builder()
@@ -44,7 +57,7 @@ class DynamoDbIntegrationSpec extends AnyWordSpec with Matchers with BeforeAndAf
 
   override def afterAll(): Unit =
     if client != null then client.close()
-    localstack.stop()
+    if dockerAvailable then localstack.stop()
 
   private def createTable(name: String, keyName: String, keyType: ScalarAttributeType): Unit =
     client.createTable(
@@ -140,6 +153,49 @@ class DynamoDbIntegrationSpec extends AnyWordSpec with Matchers with BeforeAndAf
       val store = DynamoDbVectorStore(client, "vectors")
       val all = store.loadAll()
       all.size should be >= 2
+
+    "loadAll projects the vector payload despite dropping updated_at" in:
+      val store = DynamoDbVectorStore(client, "vectors")
+      val v = GameVector(Vector.fill(155)(0.25))
+      store.save(StoredVector(GameId(300), "Projected Game", v, Instant.parse("2024-06-01T00:00:00Z")))
+
+      val loaded = store.loadAll().find(_.gameId == GameId(300))
+      loaded shouldBe defined
+      loaded.get.name shouldBe "Projected Game"
+      loaded.get.vector.values should have size 155
+      // updated_at is not projected by scanAll, so it falls back to EPOCH.
+      loaded.get.updatedAt shouldBe Instant.EPOCH
+
+    "loadAllCached serves a warm snapshot until the TTL expires" in:
+      var now = Instant.parse("2024-01-01T00:00:00Z")
+      val store = DynamoDbVectorStore(client, "vectors", () => now, java.time.Duration.ofMinutes(5))
+
+      val first = store.loadAllCached()
+      val firstSize = first.size
+
+      // Write a new vector; the cached snapshot must not reflect it before the TTL elapses.
+      store.save(StoredVector(GameId(400), "Fresh Game", GameVector(Vector.fill(155)(0.1)), now))
+      now = now.plusSeconds(60)
+      store.loadAllCached().size shouldBe firstSize
+
+      // Past the TTL the snapshot refreshes and picks up the new vector.
+      now = now.plusSeconds(5 * 60)
+      val refreshed = store.loadAllCached()
+      refreshed.size should be > firstSize
+      refreshed.map(_.gameId) should contain(GameId(400))
+
+    "loadAllCached does not cache an empty result so a transient failure never sticks" in:
+      // A swallowed Scan failure surfaces as an empty list, identical to a genuinely empty corpus.
+      // Caching it would blank recommendations for the whole TTL, so an empty scan must not be cached.
+      createTable("empty-vectors", "game_id", ScalarAttributeType.N)
+      val now = Instant.parse("2024-01-01T00:00:00Z")
+      val store = DynamoDbVectorStore(client, "empty-vectors", () => now, java.time.Duration.ofMinutes(5))
+
+      store.loadAllCached() shouldBe empty
+
+      // A vector written after the empty scan is visible immediately, proving nothing was cached.
+      store.save(StoredVector(GameId(500), "Late Game", GameVector(Vector.fill(155)(0.2)), now))
+      store.loadAllCached().map(_.gameId) should contain(GameId(500))
 
   "DynamoDbPrefetchStatusStore" should:
     "set and get prefetch status" in:

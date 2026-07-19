@@ -23,7 +23,7 @@ object RecommendationEngine extends StrictLogging:
       excludeIds: Set[GameId],
       filters: bgg.domain.GameFilters
   ): List[RecommendedGame] =
-    val allVectors = vectorStore.loadAll()
+    val allVectors = vectorStore.loadAllCached()
     logger.info(s"Loaded ${allVectors.size} vectors for recommendation scoring")
 
     val candidates = scoreCandidates(tasteVector, allVectors, excludeIds)
@@ -47,6 +47,10 @@ object RecommendationEngine extends StrictLogging:
         )
       }
 
+  // Batch size for filter hydration. Larger than most `limit` values so a single BatchGetItem usually
+  // fills the result; process windows lazily so we stop reading once `limit` matches are found.
+  private val FilterBatchSize = 100
+
   private def applyFiltersUntilLimit(
       sorted: List[RecommendedGame],
       gameCache: GameCache,
@@ -54,14 +58,20 @@ object RecommendationEngine extends StrictLogging:
       limit: Int
   ): List[RecommendedGame] =
     val filter = GameFilter.fromFilters(filters)
-    sorted.iterator
-      .filter { candidate =>
-        gameCache.load(candidate.gameId) match
-          case None =>
-            logger.debug(s"Game ${candidate.gameId.value} not in cache — skipping from recommendations")
-            false
-          case Some(game) =>
-            !filter.excludes(game)
+    // Hydrate candidates one batch at a time so we stop reading once `limit` matches are found,
+    // rather than loading every candidate's game up front.
+    sorted
+      .grouped(FilterBatchSize)
+      .flatMap { window =>
+        val games = gameCache.loadBatch(window.map(_.gameId)).map(g => g.id -> g).toMap
+        window.filter { candidate =>
+          games.get(candidate.gameId) match
+            case None =>
+              logger.debug(s"Game ${candidate.gameId.value} not in cache — skipping from recommendations")
+              false
+            case Some(game) =>
+              !filter.excludes(game)
+        }
       }
       .take(limit)
       .toList
