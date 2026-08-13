@@ -402,6 +402,12 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /collection/{username}
             Method: GET
+        GetCollectionAnalytics:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /collection/{username}/analytics
+            Method: GET
         GetGeekList:
           Type: Api
           Properties:
