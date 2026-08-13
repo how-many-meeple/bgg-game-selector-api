@@ -138,7 +138,8 @@ class BggXmlClientSpec extends AnyWordSpec with Matchers:
       capturedUrl should include("xmlapi2/collection")
       capturedUrl should include("username=myuser")
       capturedUrl should include("own=1")
-      capturedUrl should include("excludesubtype=boardgameexpansion")
+      // Expansions are fetched so analytics can count them; ExpansionsFilter drops them from listings.
+      capturedUrl should not include "excludesubtype"
 
     "return BggUserNotFound when items are empty" in:
       val backend = stubBackend(body = emptyCollectionXml)

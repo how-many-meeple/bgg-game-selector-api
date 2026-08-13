@@ -170,7 +170,8 @@ class GameService(
     val currentYear = Year.now(java.time.ZoneOffset.UTC).getValue
     val yearsOld = game.yearPublished.map(y => currentYear - y).getOrElse(Int.MaxValue)
 
-    if yearsOld <= NewGameThresholdYears then
+    if game.expansion then (false, "expansion — excluded from recommendations")
+    else if yearsOld <= NewGameThresholdYears then
       if usersRated >= NewGameMinRatings then (true, s"new game with $usersRated ratings")
       else (false, s"new game but only $usersRated ratings (min: $NewGameMinRatings)")
     else if usersRated >= vectorMinRatings then (true, s"$usersRated ratings")

@@ -354,3 +354,21 @@ class GameServiceSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach:
       service.resolveGameIds(List(GameId(4)))
 
       vectorStore.load(GameId(4)) shouldBe None
+
+    "not vectorize an expansion even with plenty of ratings" in:
+      val expansion =
+        testGame(5, "Big Box Expansion").copy(yearPublished = Some(2010), usersRated = Some(1000), expansion = true)
+      val client = new BggClient:
+        def fetchCollection(username: String, retries: Int): Either[Fail, List[CollectionItem]] = Right(Nil)
+        def fetchGeeklist(listId: String): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchHotGames(): Either[Fail, List[GameId]] = Right(Nil)
+        def fetchGamesByIds(ids: List[GameId]): Either[Fail, List[GameData]] = Right(List(expansion))
+        def searchGames(query: String): Either[Fail, List[GameData]] = Right(Nil)
+        def fetchPlays(username: String, page: Int): Either[Fail, List[PlayData]] = Right(Nil)
+
+      val caches = TestCacheProvider(gameCache, vectorStore)
+      val service = GameService(client, caches, 50, () => Instant.now())
+
+      service.resolveGameIds(List(GameId(5)))
+
+      vectorStore.load(GameId(5)) shouldBe None
