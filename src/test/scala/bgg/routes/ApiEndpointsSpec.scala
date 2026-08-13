@@ -230,6 +230,45 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
 
       response.code shouldBe StatusCode.Ok
 
+  "GET /collection/:username/analytics" should:
+    "return 200 with an analytics summary" in:
+      val client = stubClient(
+        collectionResult = Right(List(GameId(1), GameId(2))),
+        gamesResult = Right(List(testGame(1, "Catan"), testGame(2, "Pandemic")))
+      )
+      val endpoints = makeEndpoints(client)
+      val backend = makeBackend(endpoints)
+      val response = basicRequest
+        .get(uri"http://test/collection/testuser/analytics")
+        .response(asStringAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.Ok
+      val json = parseJson(response.body).getOrElse(Json.Null)
+      json.hcursor.downField("summary").get[Int]("total_games").toOption shouldBe Some(2)
+
+    "block with 202 when a prefetch is in progress" in:
+      prefetchStore.set(SourceType.Collection, "testuser", PrefetchStatus.Processing)
+      val endpoints = makeEndpoints(stubClient())
+      val backend = makeBackend(endpoints)
+      val response = basicRequest
+        .get(uri"http://test/collection/testuser/analytics")
+        .response(asStringAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.Accepted
+
+    "return 404 when the user is not found" in:
+      val client = stubClient(collectionResult = Left(Fail.BggUserNotFound("ghost")))
+      val endpoints = makeEndpoints(client)
+      val backend = makeBackend(endpoints)
+      val response = basicRequest
+        .get(uri"http://test/collection/ghost/analytics")
+        .response(asStringAlways)
+        .send(backend)
+
+      response.code shouldBe StatusCode.NotFound
+
   "GET /hot" should:
     "return 200 with hot games" in:
       val games = List(testGame(1, "Catan"), testGame(2, "Pandemic"))
