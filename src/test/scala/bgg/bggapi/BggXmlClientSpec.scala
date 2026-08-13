@@ -303,10 +303,23 @@ class BggXmlClientSpec extends AnyWordSpec with Matchers:
         }
       val client = BggXmlClient(defaultConfig, backend)
 
-      client.searchGames("game")
+      val result = client.searchGames("game")
 
       fetchCount shouldBe 1
       fetchedIds should have size 20
+      result.map(_.map(_.name)) shouldBe Right(List("Gloomhaven"))
+
+    "propagate a rate-limit failure rather than swallowing it" in:
+      val searchXml =
+        """<items><item type="boardgame" id="1"><name type="primary" value="Game 1"/></item></items>"""
+      val backend = SyncBackendStub
+        .whenRequestMatchesPartial { request =>
+          if request.uri.toString.contains("search") then ResponseStub.adjust(searchXml, StatusCode.Ok)
+          else ResponseStub.adjust("", StatusCode.TooManyRequests)
+        }
+      val client = BggXmlClient(defaultConfig, backend)
+
+      client.searchGames("game") shouldBe Left(Fail.BggRateLimited("BGG rate limit exceeded after retries"))
 
   "fetchPlays" should:
     "parse plays from XML response" in:
