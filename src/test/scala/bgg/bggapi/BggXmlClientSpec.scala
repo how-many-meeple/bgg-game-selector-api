@@ -283,7 +283,7 @@ class BggXmlClientSpec extends AnyWordSpec with Matchers:
       capturedUrl should include("query=gloomhaven")
       capturedUrl should include("type=boardgame")
 
-    "limit results to 20 games" in:
+    "limit results to 20 ids and fetch them in a single batched call" in:
       val manyResultsXml =
         "<items>" +
           (1 to 25)
@@ -291,19 +291,22 @@ class BggXmlClientSpec extends AnyWordSpec with Matchers:
             .mkString +
           "</items>"
       var fetchCount = 0
+      var fetchedIds = List.empty[String]
       val backend = SyncBackendStub
         .whenRequestMatchesPartial { request =>
           val url = request.uri.toString
           if url.contains("search") then ResponseStub.adjust(manyResultsXml, StatusCode.Ok)
           else
             fetchCount += 1
+            fetchedIds = request.uri.params.get("id").map(_.split(",").toList).getOrElse(Nil)
             ResponseStub.adjust(thingXml, StatusCode.Ok)
         }
       val client = BggXmlClient(defaultConfig, backend)
 
       client.searchGames("game")
 
-      fetchCount shouldBe 20
+      fetchCount shouldBe 1
+      fetchedIds should have size 20
 
   "fetchPlays" should:
     "parse plays from XML response" in:

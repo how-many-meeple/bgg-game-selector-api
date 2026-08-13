@@ -114,13 +114,9 @@ class BggXmlClient(config: BggConfig, backend: SyncBackend) extends BggClient wi
     if query.length < MinSearchLength then Right(Nil)
     else
       getWithRetry(s"$ApiV2Base/search", Map("query" -> query, "type" -> "boardgame"))
-        .map { xml =>
-          val ids = (xml \ "item").toList.map(n => GameId((n \ "@id").text.toInt))
-          ids.take(SearchResultLimit).flatMap { id =>
-            fetchGamesByIds(List(id)) match
-              case Right(games) => games
-              case Left(_)      => Nil
-          }
+        .flatMap { xml =>
+          val ids = (xml \ "item").toList.map(n => GameId((n \ "@id").text.toInt)).take(SearchResultLimit)
+          fetchGamesByIds(ids)
         }
 
   def fetchPlays(username: String, page: Int): Either[Fail, List[PlayData]] =
