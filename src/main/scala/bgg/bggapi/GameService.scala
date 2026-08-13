@@ -5,6 +5,7 @@ import bgg.domain.{CollectionItem, CollectionResult, Fail, GameData, GameId, Pla
 import bgg.store.StoredVector
 import bgg.vector.VectorMath
 import com.typesafe.scalalogging.StrictLogging
+import ox.*
 
 import java.time.{Instant, Year}
 
@@ -25,10 +26,11 @@ class GameService(
     if missing.isEmpty then Right(cached.sortBy(_.name))
     else
       bggClient.fetchGamesByIds(missing).map { fetched =>
-        fetched.foreach(cacheAndSync)
+        cacheAndSyncAll(fetched)
         (cached ++ fetched).sortBy(_.name)
       }
 
+  private val CacheSyncParallelism = 8
   private val CollectionIdsTtlSeconds = 24L * 3600
 
   // Per-user collection metadata (lastModified date) is kept separate from the globally-shared
@@ -130,6 +132,16 @@ class GameService(
     val cachedIds = cached.map(_.id).toSet
     val missing = ids.filterNot(cachedIds.contains)
     (cached, missing)
+
+  // Each game's cache write + vector sync is independent I/O, so run them in bounded parallel
+  // rounds rather than one-at-a-time. No BGG calls here, so no rate-limit delay is needed.
+  private def cacheAndSyncAll(games: List[GameData]): Unit =
+    if games.sizeIs <= 1 then games.foreach(cacheAndSync)
+    else
+      supervised:
+        games.grouped(CacheSyncParallelism).foreach { round =>
+          round.map(g => forkUnsupervised(cacheAndSync(g))).foreach(_.join())
+        }
 
   private def cacheAndSync(game: GameData): Unit =
     gameCache.save(game, clock())
