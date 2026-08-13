@@ -35,3 +35,4 @@ Thumbs.db
 
 # SAM build artifacts
 .aws-sam/
+.mcp.json
