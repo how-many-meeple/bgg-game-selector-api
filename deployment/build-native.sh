@@ -21,8 +21,11 @@ rm -f "$SCRIPT_DIR/bgg-api-native.zip"
 if command -v zip >/dev/null 2>&1; then
   zip -j "$SCRIPT_DIR/bgg-api-native.zip" "$SCRIPT_DIR/bootstrap"
 elif command -v powershell >/dev/null 2>&1; then
-  # Windows/Git Bash fallback: no `zip` on PATH
-  powershell -Command "Compress-Archive -Path '$SCRIPT_DIR/bootstrap' -DestinationPath '$SCRIPT_DIR/bgg-api-native.zip' -Force"
+  # Windows/Git Bash fallback: no `zip` on PATH. PowerShell needs Windows-style paths,
+  # so translate the POSIX paths (cygpath ships with Git Bash).
+  win_bootstrap="$(cygpath -w "$SCRIPT_DIR/bootstrap")"
+  win_zip="$(cygpath -w "$SCRIPT_DIR/bgg-api-native.zip")"
+  powershell -Command "Compress-Archive -Path '$win_bootstrap' -DestinationPath '$win_zip' -Force"
 else
   echo "Error: neither 'zip' nor 'powershell' found on PATH; cannot package bootstrap." >&2
   exit 1
