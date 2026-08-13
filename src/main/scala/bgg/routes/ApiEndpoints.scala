@@ -1,5 +1,6 @@
 package bgg.routes
 
+import bgg.analytics.CollectionAnalytics
 import bgg.bggapi.GameService
 import bgg.cache.{CacheKeys, GameCache}
 import bgg.config.AppConfig
@@ -74,6 +75,7 @@ class ApiEndpoints(
     .out(jsonBody[List[Json]])
     .handle { (id, hdrs) =>
       checkPrefetchBlock(SourceType.Collection, id)
+        .map(Left(_))
         .getOrElse {
           val filters = HeaderFilters.fromHeaders(hdrs)
           gameService.resolveCollection(id).map(result => collectionJson(result, filters))
@@ -86,6 +88,18 @@ class ApiEndpoints(
       game.toJson.deepMerge(Json.obj("lastmodified" -> lastModified))
     }
     FieldReduction.filterFields(enriched, filters.fieldWhitelist)
+
+  // GET /collection/:username/analytics — aggregate stats folded over the resolved collection.
+  val collectionAnalyticsEndpoint = baseEndpoint.get
+    .in("collection" / path[String]("id") / "analytics")
+    .out(jsonBody[Json])
+    .handle { id =>
+      checkPrefetchBlock(SourceType.Collection, id)
+        .map(Left(_))
+        .getOrElse {
+          gameService.resolveCollection(id).map(result => CollectionAnalytics.analyse(result).asJson)
+        }
+    }
 
   // GET /geeklist/:id
   val geeklistEndpoint = gameListEndpoint("geeklist", SourceType.GeeKList, gameService.resolveGeeklist)
@@ -101,6 +115,7 @@ class ApiEndpoints(
       .out(jsonBody[List[Json]])
       .handle { (id, hdrs) =>
         checkPrefetchBlock(sourceType, id)
+          .map(Left(_))
           .getOrElse {
             val filters = HeaderFilters.fromHeaders(hdrs)
             resolve(id).map { games =>
@@ -116,6 +131,7 @@ class ApiEndpoints(
     .out(jsonBody[List[Json]])
     .handle { hdrs =>
       checkPrefetchBlock(SourceType.Hot, "trending")
+        .map(Left(_))
         .getOrElse {
           val filters = HeaderFilters.fromHeaders(hdrs)
           gameService.resolveHotGames().map { games =>
@@ -352,22 +368,24 @@ class ApiEndpoints(
 
   // Checks if a prefetch result blocks the main collection/geeklist request.
   // Returns Some(result) if the request should be blocked, None to continue normally.
-  private def checkPrefetchBlock(sourceType: SourceType, sourceId: String): Option[Either[Fail, List[Json]]] =
+  // Some(fail) short-circuits the request; None means serve. Callers wrap in Left themselves.
+  private def checkPrefetchBlock(sourceType: SourceType, sourceId: String): Option[Fail] =
     prefetchStore.get(sourceType, sourceId) match
       case None => None
       case Some(record) =>
         record.status match
           case PrefetchStatus.Pending | PrefetchStatus.Processing =>
-            Some(Left(Fail.PrefetchInProgress(record.status.dbKey)))
+            Some(Fail.PrefetchInProgress(record.status.dbKey))
           case PrefetchStatus.NotFound =>
-            Some(Left(Fail.BggUserNotFound(sourceId)))
+            Some(Fail.BggUserNotFound(sourceId))
           case PrefetchStatus.Failed =>
-            Some(Left(Fail.BggRateLimited(record.reason.ifEmpty(s"Previous attempt to load '$sourceId' failed"))))
+            Some(Fail.BggRateLimited(record.reason.ifEmpty(s"Previous attempt to load '$sourceId' failed")))
           case PrefetchStatus.Completed => None
 
   val all: List[sttp.tapir.server.ServerEndpoint[Any, sttp.shared.Identity]] = List(
     healthEndpoint,
     collectionEndpoint,
+    collectionAnalyticsEndpoint,
     geeklistEndpoint,
     hotEndpoint,
     gameEndpoint,
