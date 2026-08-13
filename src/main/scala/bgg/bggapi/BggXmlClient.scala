@@ -74,7 +74,7 @@ class BggXmlClient(config: BggConfig, backend: SyncBackend) extends BggClient wi
   def fetchCollection(username: String, retries: Int = config.retries): Either[Fail, List[CollectionItem]] =
     getWithRetry(
       s"$ApiV2Base/collection",
-      Map("username" -> username, "own" -> "1", "excludesubtype" -> "boardgameexpansion"),
+      Map("username" -> username, "own" -> "1"),
       maxRetries = retries
     )
       .flatMap { xml =>
