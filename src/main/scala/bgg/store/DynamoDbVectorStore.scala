@@ -91,9 +91,10 @@ class DynamoDbVectorStore(
     exclusiveStartKey.foreach(k => reqBuilder.exclusiveStartKey(k))
     val response = client.scan(reqBuilder.build())
     val page = response.items().asScala.flatMap(parseItem).toList
-    val updated = acc ::: page
+    // Prepend each page (O(page)) and reverse once at the end; `acc ::: page` would be O(n) per page.
+    val updated = page.reverse ::: acc
     if response.hasLastEvaluatedKey then scanAll(Some(response.lastEvaluatedKey()), updated)
-    else updated
+    else updated.reverse
 
   private def parseItem(item: java.util.Map[String, AttributeValue]): Option[StoredVector] =
     decodeJson[Vector[Double]](item.get("vector").s(), "vector from DynamoDB").map { vec =>
