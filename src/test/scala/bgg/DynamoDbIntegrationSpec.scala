@@ -226,6 +226,17 @@ class DynamoDbIntegrationSpec extends AnyWordSpec with Matchers with BeforeAndAf
       loaded.get.vector.values should have size 155
       loaded.get.vector.values.head shouldBe 0.4 +- 1e-6
 
+    "loadAll decodes a large corpus completely" in:
+      val store = DynamoDbVectorStore(client, "bulk-vectors")
+      createTable("bulk-vectors", "game_id", ScalarAttributeType.N)
+      val ids = (1000 until 1600).toList
+      ids.foreach { i =>
+        store.save(StoredVector(GameId(i), s"Bulk $i", GameVector(Vector.fill(155)(i.toDouble / 2000)), Instant.now()))
+      }
+      val loaded = store.loadAll()
+      loaded.map(_.gameId.value).toSet should contain allElementsOf ids
+      loaded.foreach(_.vector.values should have size 155)
+
   "DynamoDbPrefetchStatusStore" should:
     "set and get prefetch status" in:
       val store = DynamoDbPrefetchStatusStore(client, "prefetch-status")

@@ -4,6 +4,7 @@ import bgg.SafeOps.{decodeJson, tryAwsCall}
 import bgg.domain.GameId
 import bgg.vector.{GameVector, VectorCodec}
 import com.typesafe.scalalogging.{Logger, StrictLogging}
+import ox.*
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import software.amazon.awssdk.services.dynamodb.model.*
 
@@ -27,6 +28,9 @@ class DynamoDbVectorStore(
     def isFreshAt(now: Instant): Boolean = Duration.between(takenAt, now).compareTo(cacheTtl) < 0
 
   @volatile private var snapshot: Option[Snapshot] = None
+
+  // Above this many rows, decode scan results in parallel; below it the fork overhead is not worth it.
+  private val ParallelDecodeThreshold = 500
 
   def save(sv: StoredVector): Unit =
     val item = Map(
@@ -56,12 +60,15 @@ class DynamoDbVectorStore(
     ).filter(_.hasItem).flatMap(response => parseItem(response.item()))
 
   def loadAll(): List[StoredVector] =
-    tryAwsCall(scanAll(exclusiveStartKey = None, acc = Nil), "Error loading all vectors from DynamoDB")
-      .map { result =>
+    tryAwsCall(
+      {
+        val rawItems = scanRawItems(exclusiveStartKey = None, acc = Nil)
+        val result = decodeItems(rawItems)
         logger.info(s"Loaded ${result.size} vectors from DynamoDB")
         result
-      }
-      .getOrElse(Nil)
+      },
+      "Error loading all vectors from DynamoDB"
+    ).getOrElse(Nil)
 
   override def loadAllCached(): List[StoredVector] =
     val now = clock()
@@ -78,12 +85,11 @@ class DynamoDbVectorStore(
         fresh
 
   @scala.annotation.tailrec
-  private def scanAll(
+  private def scanRawItems(
       exclusiveStartKey: Option[java.util.Map[String, AttributeValue]],
-      acc: List[StoredVector]
-  ): List[StoredVector] =
-    // Project only the attributes recommendation scoring needs; `updated_at` is dropped to cut bytes
-    // read (Scan bills by bytes, not rows). `name` is a DynamoDB reserved word, so alias it via #n.
+      acc: List[java.util.Map[String, AttributeValue]]
+  ): List[java.util.Map[String, AttributeValue]] =
+    // Project only what scoring needs; Scan bills by bytes read. `name` is reserved, alias via #n.
     val reqBuilder = ScanRequest
       .builder()
       .tableName(tableName)
@@ -91,11 +97,16 @@ class DynamoDbVectorStore(
       .expressionAttributeNames(Map("#n" -> "name").asJava)
     exclusiveStartKey.foreach(k => reqBuilder.exclusiveStartKey(k))
     val response = client.scan(reqBuilder.build())
-    val page = response.items().asScala.flatMap(parseItem).toList
-    // Prepend each page (O(page)) and reverse once at the end; `acc ::: page` would be O(n) per page.
+    val page = response.items().asScala.toList
     val updated = page.reverse ::: acc
-    if response.hasLastEvaluatedKey then scanAll(Some(response.lastEvaluatedKey()), updated)
+    if response.hasLastEvaluatedKey then scanRawItems(Some(response.lastEvaluatedKey()), updated)
     else updated.reverse
+
+  private def decodeItems(items: List[java.util.Map[String, AttributeValue]]): List[StoredVector] =
+    if items.size < ParallelDecodeThreshold then items.flatMap(parseItem)
+    else
+      val parallelism = math.max(1, Runtime.getRuntime.availableProcessors())
+      parLimit(parallelism)(items.map(item => () => parseItem(item))).flatten.toList
 
   private def parseItem(item: java.util.Map[String, AttributeValue]): Option[StoredVector] =
     decodeVector(item.get("vector")).map { vec =>
