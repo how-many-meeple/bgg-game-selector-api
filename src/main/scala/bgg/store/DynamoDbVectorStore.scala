@@ -2,9 +2,8 @@ package bgg.store
 
 import bgg.SafeOps.{decodeJson, tryAwsCall}
 import bgg.domain.GameId
-import bgg.vector.GameVector
+import bgg.vector.{GameVector, VectorCodec}
 import com.typesafe.scalalogging.{Logger, StrictLogging}
-import io.circe.syntax.*
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import software.amazon.awssdk.services.dynamodb.model.*
 
@@ -33,7 +32,9 @@ class DynamoDbVectorStore(
     val item = Map(
       "game_id" -> AttributeValue.fromN(sv.gameId.asString),
       "name" -> AttributeValue.fromS(sv.name),
-      "vector" -> AttributeValue.fromS(sv.vector.values.asJson.noSpaces),
+      "vector" -> AttributeValue.fromB(
+        software.amazon.awssdk.core.SdkBytes.fromByteArray(VectorCodec.encode(sv.vector.values))
+      ),
       "updated_at" -> AttributeValue.fromS(sv.updatedAt.toString)
     ).asJava
 
@@ -97,7 +98,7 @@ class DynamoDbVectorStore(
     else updated.reverse
 
   private def parseItem(item: java.util.Map[String, AttributeValue]): Option[StoredVector] =
-    decodeJson[Vector[Double]](item.get("vector").s(), "vector from DynamoDB").map { vec =>
+    decodeVector(item.get("vector")).map { vec =>
       StoredVector(
         gameId = GameId(item.get("game_id").n().toInt),
         name = item.get("name").s(),
@@ -106,3 +107,13 @@ class DynamoDbVectorStore(
         updatedAt = Option(item.get("updated_at")).map(a => Instant.parse(a.s())).getOrElse(Instant.EPOCH)
       )
     }
+
+  private def decodeVector(attr: AttributeValue): Option[Vector[Double]] =
+    Option(attr) match
+      case Some(a) if a.b() != null =>
+        VectorCodec.decode(a.b().asByteArray()) match
+          case Right(v)  => Some(v)
+          case Left(err) => logger.warn(s"Failed to decode binary vector: $err"); None
+      case Some(a) if a.s() != null =>
+        decodeJson[Vector[Double]](a.s(), "legacy JSON vector from DynamoDB")
+      case _ => None

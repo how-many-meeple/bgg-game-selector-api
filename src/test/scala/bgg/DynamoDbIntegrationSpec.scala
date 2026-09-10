@@ -147,7 +147,7 @@ class DynamoDbIntegrationSpec extends AnyWordSpec with Matchers with BeforeAndAf
 
       val loaded = store.load(GameId(200))
       loaded.get.name shouldBe "Game V2"
-      loaded.get.vector.values.head shouldBe 0.9
+      loaded.get.vector.values.head shouldBe 0.9 +- 1e-6
 
     "loadAll returns all stored vectors" in:
       val store = DynamoDbVectorStore(client, "vectors")
@@ -196,6 +196,35 @@ class DynamoDbIntegrationSpec extends AnyWordSpec with Matchers with BeforeAndAf
       // A vector written after the empty scan is visible immediately, proving nothing was cached.
       store.save(StoredVector(GameId(500), "Late Game", GameVector(Vector.fill(155)(0.2)), now))
       store.loadAllCached().map(_.gameId) should contain(GameId(500))
+
+    "store the vector attribute as Binary" in:
+      import scala.jdk.CollectionConverters.*
+      val store = DynamoDbVectorStore(client, "vectors")
+      store.save(StoredVector(GameId(600), "Binary Game", GameVector(Vector.fill(155)(0.3)), Instant.now()))
+
+      val raw = client.getItem(
+        GetItemRequest.builder().tableName("vectors")
+          .key(Map("game_id" -> AttributeValue.fromN("600")).asJava).build()
+      )
+      raw.item().get("vector").b() should not be null
+      raw.item().get("vector").s() shouldBe null
+
+    "dual-read a legacy JSON String vector" in:
+      import scala.jdk.CollectionConverters.*
+      import io.circe.syntax.*
+      val legacy = Vector.fill(155)(0.4)
+      client.putItem(
+        PutItemRequest.builder().tableName("vectors").item(Map(
+          "game_id" -> AttributeValue.fromN("700"),
+          "name" -> AttributeValue.fromS("Legacy Game"),
+          "vector" -> AttributeValue.fromS(legacy.asJson.noSpaces)
+        ).asJava).build()
+      )
+      val store = DynamoDbVectorStore(client, "vectors")
+      val loaded = store.load(GameId(700))
+      loaded shouldBe defined
+      loaded.get.vector.values should have size 155
+      loaded.get.vector.values.head shouldBe 0.4 +- 1e-6
 
   "DynamoDbPrefetchStatusStore" should:
     "set and get prefetch status" in:
