@@ -5,11 +5,13 @@ import bgg.domain.GameId
 import bgg.vector.{GameVector, VectorCodec}
 import com.typesafe.scalalogging.{Logger, StrictLogging}
 import ox.*
+import software.amazon.awssdk.core.SdkBytes
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import software.amazon.awssdk.services.dynamodb.model.*
 
 import java.time.{Duration, Instant}
 import scala.jdk.CollectionConverters.*
+import scala.util.Try
 
 class DynamoDbVectorStore(
     client: DynamoDbClient,
@@ -36,9 +38,7 @@ class DynamoDbVectorStore(
     val item = Map(
       "game_id" -> AttributeValue.fromN(sv.gameId.asString),
       "name" -> AttributeValue.fromS(sv.name),
-      "vector" -> AttributeValue.fromB(
-        software.amazon.awssdk.core.SdkBytes.fromByteArray(VectorCodec.encode(sv.vector.values))
-      ),
+      "vector" -> AttributeValue.fromB(SdkBytes.fromByteArray(VectorCodec.encode(sv.vector.values))),
       "updated_at" -> AttributeValue.fromS(sv.updatedAt.toString)
     ).asJava
 
@@ -59,53 +59,33 @@ class DynamoDbVectorStore(
       s"Error loading vector for game $id from DynamoDB"
     ).filter(_.hasItem).flatMap(response => parseItem(response.item()))
 
-  def loadAll(): List[StoredVector] =
-    tryAwsCall(
-      {
-        val rawItems = scanRawItems(exclusiveStartKey = None, acc = Nil)
-        val result = decodeItems(rawItems)
-        logger.info(s"Loaded ${result.size} vectors from DynamoDB")
-        result
-      },
-      "Error loading all vectors from DynamoDB"
-    ).getOrElse(Nil)
+  def loadAll(): List[StoredVector] = loadAllRows(applyProjection = true)
 
   /** One-off migration: reload every vector and re-save it so legacy JSON rows become Binary.
     * Idempotent — re-saving an already-binary row is a no-op change. Returns rows rewritten.
     */
   def rewriteAll(): Int =
-    val all = loadAllUnprojected()
+    val all = loadAllRows(applyProjection = false)
     all.foreach(save)
     logger.info(s"Rewrote ${all.size} vectors to binary encoding")
     all.size
 
-  /** Full-table scan WITHOUT projection, so all attributes (including updated_at) are returned.
-    * Used only by rewriteAll to preserve updated_at when backfilling rows. The hot path (loadAll)
-    * uses a projection to reduce Scan bytes billed.
+  /** Full-table scan with optional projection. When applyProjection is true, projects only the
+    * fields needed for scoring (game_id, name, vector) to reduce Scan bytes billed. When false,
+    * all attributes (including updated_at) are returned; rewriteAll uses this to preserve
+    * updated_at when backfilling rows.
     */
-  private def loadAllUnprojected(): List[StoredVector] =
+  private def loadAllRows(applyProjection: Boolean): List[StoredVector] =
+    val kind = if applyProjection then "projected" else "unprojected"
     tryAwsCall(
       {
-        val rawItems = scanRawItemsUnprojected(exclusiveStartKey = None, acc = Nil)
+        val rawItems = scanRawItems(applyProjection, exclusiveStartKey = None, acc = Nil)
         val result = decodeItems(rawItems)
-        logger.info(s"Loaded ${result.size} unprojected vectors from DynamoDB")
+        logger.info(s"Loaded ${result.size} $kind vectors from DynamoDB")
         result
       },
-      "Error loading all unprojected vectors from DynamoDB"
+      s"Error loading all $kind vectors from DynamoDB"
     ).getOrElse(Nil)
-
-  @scala.annotation.tailrec
-  private def scanRawItemsUnprojected(
-      exclusiveStartKey: Option[java.util.Map[String, AttributeValue]],
-      acc: List[java.util.Map[String, AttributeValue]]
-  ): List[java.util.Map[String, AttributeValue]] =
-    val reqBuilder = ScanRequest.builder().tableName(tableName)
-    exclusiveStartKey.foreach(k => reqBuilder.exclusiveStartKey(k))
-    val response = client.scan(reqBuilder.build())
-    val page = response.items().asScala.toList
-    val updated = page.reverse ::: acc
-    if response.hasLastEvaluatedKey then scanRawItemsUnprojected(Some(response.lastEvaluatedKey()), updated)
-    else updated.reverse
 
   override def loadAllCached(): List[StoredVector] =
     val now = clock()
@@ -123,20 +103,22 @@ class DynamoDbVectorStore(
 
   @scala.annotation.tailrec
   private def scanRawItems(
+      applyProjection: Boolean,
       exclusiveStartKey: Option[java.util.Map[String, AttributeValue]],
       acc: List[java.util.Map[String, AttributeValue]]
   ): List[java.util.Map[String, AttributeValue]] =
+    val reqBuilder = ScanRequest.builder().tableName(tableName)
     // Project only what scoring needs; Scan bills by bytes read. `name` is reserved, alias via #n.
-    val reqBuilder = ScanRequest
-      .builder()
-      .tableName(tableName)
-      .projectionExpression("game_id, #n, vector")
-      .expressionAttributeNames(Map("#n" -> "name").asJava)
+    if applyProjection then
+      reqBuilder
+        .projectionExpression("game_id, #n, vector")
+        .expressionAttributeNames(Map("#n" -> "name").asJava)
     exclusiveStartKey.foreach(k => reqBuilder.exclusiveStartKey(k))
     val response = client.scan(reqBuilder.build())
     val page = response.items().asScala.toList
     val updated = page.reverse ::: acc
-    if response.hasLastEvaluatedKey then scanRawItems(Some(response.lastEvaluatedKey()), updated)
+    if response.hasLastEvaluatedKey then
+      scanRawItems(applyProjection, Some(response.lastEvaluatedKey()), updated)
     else updated.reverse
 
   private def decodeItems(items: List[java.util.Map[String, AttributeValue]]): List[StoredVector] =
@@ -146,15 +128,21 @@ class DynamoDbVectorStore(
       parLimit(parallelism)(items.map(item => () => parseItem(item))).flatten.toList
 
   private def parseItem(item: java.util.Map[String, AttributeValue]): Option[StoredVector] =
-    decodeVector(item.get("vector")).map { vec =>
-      StoredVector(
-        gameId = GameId(item.get("game_id").n().toInt),
-        name = item.get("name").s(),
-        vector = GameVector(vec),
-        // updated_at is absent from projected reads (scanRawItems); fall back to epoch when not present.
-        updatedAt = Option(item.get("updated_at")).map(a => Instant.parse(a.s())).getOrElse(Instant.EPOCH)
-      )
-    }
+    Try {
+      decodeVector(item.get("vector")).map { vec =>
+        StoredVector(
+          gameId = GameId(item.get("game_id").n().toInt),
+          name = item.get("name").s(),
+          vector = GameVector(vec),
+          // updated_at is absent from projected reads (scanRawItems); fall back to epoch when not present.
+          updatedAt = Option(item.get("updated_at")).map(a => Instant.parse(a.s())).getOrElse(Instant.EPOCH)
+        )
+      }
+    }.recover { case ex =>
+      val gameIdStr = Try(item.get("game_id").n()).getOrElse("unknown")
+      logger.warn(s"Failed to parse DynamoDB row for game_id=$gameIdStr: ${ex.getMessage}")
+      None
+    }.getOrElse(None)
 
   private def decodeVector(attr: AttributeValue): Option[Vector[Double]] =
     Option(attr) match

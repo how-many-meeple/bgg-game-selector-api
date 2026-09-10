@@ -264,6 +264,62 @@ class DynamoDbIntegrationSpec extends AnyWordSpec with Matchers with BeforeAndAf
       // updated_at must survive the rewrite, not be destroyed to EPOCH.
       store.load(GameId(800)).get.updatedAt shouldBe Instant.parse(originalUpdatedAt)
 
+    "tolerate a row missing the name attribute without blanking the corpus" in:
+      import scala.jdk.CollectionConverters.*
+      import bgg.vector.VectorCodec
+      createTable("malformed-name-vectors", "game_id", ScalarAttributeType.N)
+      val store = DynamoDbVectorStore(client, "malformed-name-vectors")
+
+      // Save two valid rows
+      store.save(StoredVector(GameId(901), "Valid Game 1", GameVector(Vector.fill(155)(0.1)), Instant.now()))
+      store.save(StoredVector(GameId(902), "Valid Game 2", GameVector(Vector.fill(155)(0.2)), Instant.now()))
+
+      // Insert a row missing the name attribute directly
+      client.putItem(
+        PutItemRequest.builder().tableName("malformed-name-vectors").item(Map(
+          "game_id" -> AttributeValue.fromN("903"),
+          "vector" -> AttributeValue.fromB(
+            software.amazon.awssdk.core.SdkBytes.fromByteArray(VectorCodec.encode(Vector.fill(155)(0.3)))
+          )
+        ).asJava).build()
+      )
+
+      val loaded = store.loadAll()
+      // The two valid rows must be present; the corpus must NOT be blanked
+      loaded.size shouldBe 2
+      loaded.map(_.gameId) should contain allOf (GameId(901), GameId(902))
+      loaded.map(_.gameId) should not contain GameId(903)
+
+    "tolerate a row with malformed updated_at without blanking the corpus" in:
+      import scala.jdk.CollectionConverters.*
+      import bgg.vector.VectorCodec
+      createTable("malformed-timestamp-vectors", "game_id", ScalarAttributeType.N)
+      val store = DynamoDbVectorStore(client, "malformed-timestamp-vectors")
+
+      // Save one valid row
+      store.save(StoredVector(GameId(911), "Valid Game A", GameVector(Vector.fill(155)(0.5)), Instant.now()))
+
+      // Insert a row with a malformed updated_at timestamp (will be read during rewriteAll, not loadAll)
+      client.putItem(
+        PutItemRequest.builder().tableName("malformed-timestamp-vectors").item(Map(
+          "game_id" -> AttributeValue.fromN("913"),
+          "name" -> AttributeValue.fromS("Malformed Timestamp Game"),
+          "vector" -> AttributeValue.fromB(
+            software.amazon.awssdk.core.SdkBytes.fromByteArray(VectorCodec.encode(Vector.fill(155)(0.7)))
+          ),
+          "updated_at" -> AttributeValue.fromS("not-a-valid-timestamp")
+        ).asJava).build()
+      )
+
+      // rewriteAll uses unprojected reads, so it will encounter the malformed timestamp.
+      // It must not blank the corpus - the valid row must still be rewritten.
+      val rewritten = store.rewriteAll()
+      rewritten shouldBe 1  // Only the valid row is rewritten; malformed row is dropped
+
+      // Verify the valid row is present
+      val loaded = store.loadAll()
+      loaded.map(_.gameId) should contain(GameId(911))
+
   "DynamoDbPrefetchStatusStore" should:
     "set and get prefetch status" in:
       val store = DynamoDbPrefetchStatusStore(client, "prefetch-status")
