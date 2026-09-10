@@ -70,6 +70,15 @@ class DynamoDbVectorStore(
       "Error loading all vectors from DynamoDB"
     ).getOrElse(Nil)
 
+  /** One-off migration: reload every vector and re-save it so legacy JSON rows become Binary.
+    * Idempotent — re-saving an already-binary row is a no-op change. Returns rows rewritten.
+    */
+  def rewriteAll(): Int =
+    val all = loadAll()
+    all.foreach(save)
+    logger.info(s"Rewrote ${all.size} vectors to binary encoding")
+    all.size
+
   override def loadAllCached(): List[StoredVector] =
     val now = clock()
     snapshot match

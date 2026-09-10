@@ -237,6 +237,29 @@ class DynamoDbIntegrationSpec extends AnyWordSpec with Matchers with BeforeAndAf
       loaded.map(_.gameId.value).toSet should contain allElementsOf ids
       loaded.foreach(_.vector.values should have size 155)
 
+    "rewriteAll converts legacy JSON rows to Binary" in:
+      import scala.jdk.CollectionConverters.*
+      import io.circe.syntax.*
+      createTable("backfill-vectors", "game_id", ScalarAttributeType.N)
+      client.putItem(
+        PutItemRequest.builder().tableName("backfill-vectors").item(Map(
+          "game_id" -> AttributeValue.fromN("800"),
+          "name" -> AttributeValue.fromS("Backfill Game"),
+          "vector" -> AttributeValue.fromS(Vector.fill(155)(0.6).asJson.noSpaces)
+        ).asJava).build()
+      )
+      val store = DynamoDbVectorStore(client, "backfill-vectors")
+
+      store.rewriteAll() shouldBe 1
+
+      val raw = client.getItem(
+        GetItemRequest.builder().tableName("backfill-vectors")
+          .key(Map("game_id" -> AttributeValue.fromN("800")).asJava).build()
+      )
+      raw.item().get("vector").b() should not be null
+      raw.item().get("vector").s() shouldBe null
+      store.load(GameId(800)).get.vector.values.head shouldBe 0.6 +- 1e-6
+
   "DynamoDbPrefetchStatusStore" should:
     "set and get prefetch status" in:
       val store = DynamoDbPrefetchStatusStore(client, "prefetch-status")
