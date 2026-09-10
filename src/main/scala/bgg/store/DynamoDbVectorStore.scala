@@ -74,10 +74,38 @@ class DynamoDbVectorStore(
     * Idempotent — re-saving an already-binary row is a no-op change. Returns rows rewritten.
     */
   def rewriteAll(): Int =
-    val all = loadAll()
+    val all = loadAllUnprojected()
     all.foreach(save)
     logger.info(s"Rewrote ${all.size} vectors to binary encoding")
     all.size
+
+  /** Full-table scan WITHOUT projection, so all attributes (including updated_at) are returned.
+    * Used only by rewriteAll to preserve updated_at when backfilling rows. The hot path (loadAll)
+    * uses a projection to reduce Scan bytes billed.
+    */
+  private def loadAllUnprojected(): List[StoredVector] =
+    tryAwsCall(
+      {
+        val rawItems = scanRawItemsUnprojected(exclusiveStartKey = None, acc = Nil)
+        val result = decodeItems(rawItems)
+        logger.info(s"Loaded ${result.size} unprojected vectors from DynamoDB")
+        result
+      },
+      "Error loading all unprojected vectors from DynamoDB"
+    ).getOrElse(Nil)
+
+  @scala.annotation.tailrec
+  private def scanRawItemsUnprojected(
+      exclusiveStartKey: Option[java.util.Map[String, AttributeValue]],
+      acc: List[java.util.Map[String, AttributeValue]]
+  ): List[java.util.Map[String, AttributeValue]] =
+    val reqBuilder = ScanRequest.builder().tableName(tableName)
+    exclusiveStartKey.foreach(k => reqBuilder.exclusiveStartKey(k))
+    val response = client.scan(reqBuilder.build())
+    val page = response.items().asScala.toList
+    val updated = page.reverse ::: acc
+    if response.hasLastEvaluatedKey then scanRawItemsUnprojected(Some(response.lastEvaluatedKey()), updated)
+    else updated.reverse
 
   override def loadAllCached(): List[StoredVector] =
     val now = clock()
@@ -123,7 +151,7 @@ class DynamoDbVectorStore(
         gameId = GameId(item.get("game_id").n().toInt),
         name = item.get("name").s(),
         vector = GameVector(vec),
-        // updated_at is absent from projected reads (scanAll); fall back to epoch when not present.
+        // updated_at is absent from projected reads (scanRawItems); fall back to epoch when not present.
         updatedAt = Option(item.get("updated_at")).map(a => Instant.parse(a.s())).getOrElse(Instant.EPOCH)
       )
     }

@@ -163,7 +163,7 @@ class DynamoDbIntegrationSpec extends AnyWordSpec with Matchers with BeforeAndAf
       loaded shouldBe defined
       loaded.get.name shouldBe "Projected Game"
       loaded.get.vector.values should have size 155
-      // updated_at is not projected by scanAll, so it falls back to EPOCH.
+      // updated_at is not projected by the projected scan, so it falls back to EPOCH.
       loaded.get.updatedAt shouldBe Instant.EPOCH
 
     "loadAllCached serves a warm snapshot until the TTL expires" in:
@@ -241,11 +241,13 @@ class DynamoDbIntegrationSpec extends AnyWordSpec with Matchers with BeforeAndAf
       import scala.jdk.CollectionConverters.*
       import io.circe.syntax.*
       createTable("backfill-vectors", "game_id", ScalarAttributeType.N)
+      val originalUpdatedAt = "2024-06-01T00:00:00Z"
       client.putItem(
         PutItemRequest.builder().tableName("backfill-vectors").item(Map(
           "game_id" -> AttributeValue.fromN("800"),
           "name" -> AttributeValue.fromS("Backfill Game"),
-          "vector" -> AttributeValue.fromS(Vector.fill(155)(0.6).asJson.noSpaces)
+          "vector" -> AttributeValue.fromS(Vector.fill(155)(0.6).asJson.noSpaces),
+          "updated_at" -> AttributeValue.fromS(originalUpdatedAt)
         ).asJava).build()
       )
       val store = DynamoDbVectorStore(client, "backfill-vectors")
@@ -259,6 +261,8 @@ class DynamoDbIntegrationSpec extends AnyWordSpec with Matchers with BeforeAndAf
       raw.item().get("vector").b() should not be null
       raw.item().get("vector").s() shouldBe null
       store.load(GameId(800)).get.vector.values.head shouldBe 0.6 +- 1e-6
+      // updated_at must survive the rewrite, not be destroyed to EPOCH.
+      store.load(GameId(800)).get.updatedAt shouldBe Instant.parse(originalUpdatedAt)
 
   "DynamoDbPrefetchStatusStore" should:
     "set and get prefetch status" in:
