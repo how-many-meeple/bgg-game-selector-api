@@ -21,4 +21,6 @@ class VectorCodecSpec extends AnyWordSpec with Matchers:
       VectorCodec.decode(VectorCodec.encode(Vector.empty)) shouldBe Right(Vector.empty)
 
     "reject bytes whose length is not a multiple of 4" in:
-      VectorCodec.decode(Array[Byte](1, 2, 3)).isLeft shouldBe true
+      VectorCodec.decode(Array[Byte](1, 2, 3)) match
+        case Left(msg) => msg should include ("not a multiple of 4")
+        case Right(_) => fail("expected Left")
