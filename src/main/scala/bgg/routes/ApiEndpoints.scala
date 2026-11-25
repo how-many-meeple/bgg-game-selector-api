@@ -346,6 +346,32 @@ class ApiEndpoints(
               Left(Fail.IncorrectInput(s"Proxy request failed: ${e.getClass.getName}: ${e.getMessage}"))
     }
 
+  // 302 to the b64url proxy so image bytes are cached once, under the URL the frontend already uses
+  private def gameImageRedirect(id: Int, preferThumbnail: Boolean): Either[Fail, (String, String)] =
+    gameService.resolveGameIds(List(GameId(id))).flatMap {
+      case game :: _ =>
+        val imageUrl = if preferThumbnail then game.thumbnail.orElse(game.image) else game.image.orElse(game.thumbnail)
+        imageUrl
+          .map(url => (s"/cors-proxy/${encodeProxyUrl(url)}", GameImageCacheControl))
+          .toRight(Fail.NotFound(s"Game $id has no image"))
+      case Nil => Left(Fail.NotFound(s"Game $id not found"))
+    }
+
+  private val gameImageBase = baseEndpoint.get
+    .in("cors-proxy" / "game" / path[Int]("id"))
+    .out(statusCode(StatusCode.Found))
+    .out(header[String]("Location"))
+    .out(header[String]("Cache-Control"))
+
+  // GET /cors-proxy/game/:id
+  val corsProxyGameImageEndpoint = gameImageBase
+    .handle(id => gameImageRedirect(id, preferThumbnail = false))
+
+  // GET /cors-proxy/game/:id/thumbnail
+  val corsProxyGameThumbnailEndpoint = gameImageBase
+    .in("thumbnail")
+    .handle(id => gameImageRedirect(id, preferThumbnail = true))
+
   private def resolveGamesAsMap(ids: List[GameId]): Map[GameId, GameData] =
     gameService.resolveGameIds(ids) match
       case Right(games) => games.map(g => (g.id, g)).toMap
@@ -395,13 +421,20 @@ class ApiEndpoints(
     prefetchStatusEndpoint,
     recommendationsEndpoint,
     schemaEndpoint,
-    corsProxyEndpoint
+    corsProxyEndpoint,
+    corsProxyGameImageEndpoint,
+    corsProxyGameThumbnailEndpoint
   )
 
 object ApiEndpoints:
   val DefaultRecommendationLimit = 10
   val ScorePrecision = 10000.0
   val ImmutableCacheControl = "public, max-age=31536000, immutable"
+  // 30 days: a game's BGG image can change, so the id -> image mapping isn't immutable
+  val GameImageCacheControl = "public, max-age=2592000"
+
+private def encodeProxyUrl(url: String): String =
+  Base64.getUrlEncoder.withoutPadding.encodeToString(url.getBytes("UTF-8"))
 
 private def decodeProxyUrl(raw: String): Either[String, String] =
   // Strip leading underscore added by HMM frontend, restore base64url padding

@@ -182,6 +182,10 @@ Returns the vector schema (dimensions, mechanic/category vocabulary).
 
 Proxies an image URL (base64url-encoded) with immutable cache headers. Used by the frontend for BGG thumbnails.
 
+### GET /cors-proxy/game/:id and /cors-proxy/game/:id/thumbnail
+
+Redirects (302) to the `/cors-proxy/:b64url` URL for the game's image or thumbnail. Falls back to the other variant if the requested one is missing. Returns 404 for an unknown game or one with no image, and 400 for an ID that isn't a number. The redirect is cached for 30 days.
+
 ## Filter Headers
 
 All collection/geeklist endpoints accept filtering via HTTP headers:
