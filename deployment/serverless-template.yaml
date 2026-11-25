@@ -438,6 +438,18 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /cors-proxy/{url}
             Method: GET
+        CorsProxyGame:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /cors-proxy/game/{id}
+            Method: GET
+        CorsProxyGameThumbnail:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /cors-proxy/game/{id}/thumbnail
+            Method: GET
         RecommendationsFromGames:
           Type: Api
           Properties:

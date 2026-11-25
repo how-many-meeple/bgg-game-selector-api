@@ -612,3 +612,40 @@ class ApiEndpointsSpec extends AnyWordSpec with Matchers with BeforeAndAfterEach
       response.code shouldBe StatusCode.BadRequest
       val json = parseJson(response.body).getOrElse(Json.Null)
       json.hcursor.get[String]("error").toOption.get should include("Not a valid URL")
+
+  "GET /cors-proxy/game/:id" should:
+    def b64(u: String) = Base64.getUrlEncoder.withoutPadding.encodeToString(u.getBytes("UTF-8"))
+    val img = "https://cf.geekdo-images.com/full.jpg"
+    val thumb = "https://cf.geekdo-images.com/thumb.jpg"
+
+    def get(path: String, game: Option[GameData] = None) =
+      game.foreach(gameCache.save(_, Instant.now()))
+      basicRequest
+        .get(uri"http://test/cors-proxy/game".addPath(path.split('/').toSeq))
+        .followRedirects(false)
+        .response(asStringAlways)
+        .send(makeBackend(makeEndpoints(stubClient(gamesResult = Right(Nil)))))
+
+    "302 to the proxied image with a 30-day cache" in:
+      val r = get("42", Some(testGame(42, "Catan").copy(image = Some(img), thumbnail = Some(thumb))))
+      r.code shouldBe StatusCode.Found
+      r.header("Location") shouldBe Some(s"/cors-proxy/${b64(img)}")
+      r.header("Cache-Control") shouldBe Some("public, max-age=2592000")
+
+    "302 to the thumbnail for /thumbnail" in:
+      val r = get("42/thumbnail", Some(testGame(42, "Catan").copy(image = Some(img), thumbnail = Some(thumb))))
+      r.code shouldBe StatusCode.Found
+      r.header("Location") shouldBe Some(s"/cors-proxy/${b64(thumb)}")
+
+    "fall back to the other variant when one is missing" in:
+      get("42", Some(testGame(42, "Catan").copy(image = None, thumbnail = Some(thumb))))
+        .header("Location") shouldBe Some(s"/cors-proxy/${b64(thumb)}")
+      get("43/thumbnail", Some(testGame(43, "Azul").copy(image = Some(img), thumbnail = None)))
+        .header("Location") shouldBe Some(s"/cors-proxy/${b64(img)}")
+
+    "404 when the game has no image at all" in:
+      get("42", Some(testGame(42, "Catan").copy(image = None, thumbnail = None))).code shouldBe StatusCode.NotFound
+
+    "404 for an unknown id, 400 for a non-numeric id" in:
+      get("99999").code shouldBe StatusCode.NotFound
+      get("abc").code shouldBe StatusCode.BadRequest
